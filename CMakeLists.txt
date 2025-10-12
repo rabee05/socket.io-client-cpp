@@ -117,6 +117,15 @@ if(OPENSSL_FOUND)
     endif()
 
     target_compile_definitions(sioclient_tls PRIVATE -DSIO_TLS)
+
+    # In Release builds, enforce HTTPS-only connections (reject http://)
+    if(CMAKE_BUILD_TYPE STREQUAL "Release")
+        target_compile_definitions(sioclient_tls PRIVATE -DPRODUCTION_BUILD)
+        message(STATUS "Socket.IO TLS: Production mode - HTTPS only (HTTP rejected)")
+    else()
+        message(STATUS "Socket.IO TLS: Development mode - HTTP and HTTPS allowed")
+    endif()
+
     target_link_libraries(sioclient_tls PUBLIC Threads::Threads)
 
     if(BUILD_SHARED_LIBS)
