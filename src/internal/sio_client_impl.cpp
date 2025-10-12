@@ -279,10 +279,27 @@ namespace sio
     {
         do{
             websocketpp::uri uo(uri);
+            const std::string scheme = uo.get_scheme();
             ostringstream ss;
 #if SIO_TLS
+    #ifdef PRODUCTION_BUILD
+            // Production build: ONLY allow secure connections (HTTPS/WSS)
+            if (scheme != "https" && scheme != "wss") {
+                m_client.get_alog().write(websocketpp::log::alevel::app,
+                    "ERROR: Insecure connection rejected in production build. Use https:// or wss:// only.");
+                break;  // Exit and trigger on_fail callback
+            }
             ss<<"wss://";
+    #else
+            // Development build: Allow both HTTP and HTTPS
+            if (scheme == "https" || scheme == "wss") {
+                ss<<"wss://";
+            } else {
+                ss<<"ws://";
+            }
+    #endif
 #else
+            // Non-TLS library: only supports ws://
             ss<<"ws://";
 #endif
             const std::string host(uo.get_host());
