@@ -40,6 +40,14 @@ add_definitions(
     -D_WEBSOCKETPP_CPP11_CHRONO_
 )
 
+# Suppress deprecation warnings from third-party libraries
+# These are external dependencies we can't control
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    add_compile_options(
+        -Wno-deprecated-declarations  # Suppress OpenSSL 3.0 and std::iterator deprecations
+    )
+endif()
+
 if (DISABLE_LOGGING)
     add_definitions(-DSIO_DISABLE_LOGGING)
 endif()
