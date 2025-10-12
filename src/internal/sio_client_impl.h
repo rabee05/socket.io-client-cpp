@@ -36,7 +36,7 @@ typedef websocketpp::config::asio_client client_config;
 
 #include <asio/steady_timer.hpp>
 #include <asio/error_code.hpp>
-#include <asio/io_service.hpp>
+#include <asio/io_context.hpp>
 
 #include <atomic>
 #include <memory>
@@ -69,7 +69,10 @@ namespace sio
         //set listeners and event bindings.
 #define SYNTHESIS_SETTER(__TYPE__,__FIELD__) \
     void set_##__FIELD__(__TYPE__ const& l) \
-        { m_##__FIELD__ = l;}
+        { \
+            std::lock_guard<std::mutex> lock(m_listener_mutex); \
+            m_##__FIELD__ = l; \
+        }
         
         SYNTHESIS_SETTER(client::con_listener,open_listener)
         
@@ -82,23 +85,27 @@ namespace sio
         SYNTHESIS_SETTER(client::close_listener,close_listener)
         
         SYNTHESIS_SETTER(client::socket_listener,socket_open_listener)
-        
+
         SYNTHESIS_SETTER(client::socket_listener,socket_close_listener)
-        
+
+        SYNTHESIS_SETTER(client::state_listener,state_listener)
+
 #undef SYNTHESIS_SETTER
         
         
         void clear_con_listeners()
         {
+            std::lock_guard<std::mutex> lock(m_listener_mutex);
             m_open_listener = nullptr;
             m_close_listener = nullptr;
             m_fail_listener = nullptr;
             m_reconnect_listener = nullptr;
             m_reconnecting_listener = nullptr;
         }
-        
+
         void clear_socket_listeners()
         {
+            std::lock_guard<std::mutex> lock(m_listener_mutex);
             m_socket_open_listener = nullptr;
             m_socket_close_listener = nullptr;
         }
@@ -114,8 +121,10 @@ namespace sio
         
         void sync_close();
         
-        bool opened() const { return m_con_state == con_opened; }
-        
+        bool opened() const { return m_con_state.load(std::memory_order_acquire) == con_opened; }
+
+        client::connection_state get_connection_state() const;
+
         std::string const& get_sessionid() const { return m_sid; }
 
         void set_reconnect_attempts(unsigned attempts) {m_reconn_attempts = attempts;}
@@ -137,11 +146,13 @@ namespace sio
         
         void remove_socket(std::string const& nsp);
         
-        asio::io_service& get_io_service();
+        asio::io_context& get_io_service();
         
         void on_socket_closed(std::string const& nsp);
-        
+
         void on_socket_opened(std::string const& nsp);
+
+        void notify_state_change(client::connection_state state);
         
     private:
         void run_loop();
@@ -219,8 +230,8 @@ namespace sio
         std::unique_ptr<asio::steady_timer> m_ping_timeout_timer;
 
         std::unique_ptr<asio::steady_timer> m_reconn_timer;
-        
-        con_state m_con_state;
+
+        std::atomic<con_state> m_con_state;
         
         client::con_listener m_open_listener;
         client::con_listener m_fail_listener;
@@ -230,10 +241,12 @@ namespace sio
         
         client::socket_listener m_socket_open_listener;
         client::socket_listener m_socket_close_listener;
-        
+        client::state_listener m_state_listener;
+
         std::map<const std::string,socket::ptr> m_sockets;
-        
+
         std::mutex m_socket_mutex;
+        std::mutex m_listener_mutex;
 
         unsigned m_reconn_delay;
 

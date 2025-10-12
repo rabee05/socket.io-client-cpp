@@ -90,7 +90,8 @@ namespace sio
         }
         if(m_network_thread)
         {
-            if(m_con_state == con_closing||m_con_state == con_closed)
+            con_state state = m_con_state.load(std::memory_order_acquire);
+            if(state == con_closing || state == con_closed)
             {
                 //if client is closing, join to wait.
                 //if client is closed, still need to join,
@@ -104,7 +105,8 @@ namespace sio
                 return;
             }
         }
-        m_con_state = con_opening;
+        m_con_state.store(con_opening, std::memory_order_release);
+        notify_state_change(client::connection_state::connecting);
         m_base_url = uri;
         m_reconn_made = 0;
 
@@ -160,7 +162,8 @@ namespace sio
 
     void client_impl::close()
     {
-        m_con_state = con_closing;
+        m_con_state.store(con_closing, std::memory_order_release);
+        notify_state_change(client::connection_state::closing);
         m_abort_retries = true;
         this->sockets_invoke_void(&sio::socket::close);
         m_client.get_io_service().dispatch(std::bind(&client_impl::close_impl, this,close::status::normal,"End by user"));
@@ -168,7 +171,7 @@ namespace sio
 
     void client_impl::sync_close()
     {
-        m_con_state = con_closing;
+        m_con_state.store(con_closing, std::memory_order_release);
         m_abort_retries = true;
         this->sockets_invoke_void(&sio::socket::close);
         m_client.get_io_service().dispatch(std::bind(&client_impl::close_impl, this,close::status::normal,"End by user"));
@@ -211,19 +214,55 @@ namespace sio
         }
     }
 
-    asio::io_service& client_impl::get_io_service()
+    asio::io_context& client_impl::get_io_service()
     {
         return m_client.get_io_service();
     }
 
     void client_impl::on_socket_closed(string const& nsp)
     {
-        if(m_socket_close_listener)m_socket_close_listener(nsp);
+        client::socket_listener listener;
+        {
+            std::lock_guard<std::mutex> lock(m_listener_mutex);
+            listener = m_socket_close_listener;
+        }
+        if(listener) listener(nsp);
     }
 
     void client_impl::on_socket_opened(string const& nsp)
     {
-        if(m_socket_open_listener)m_socket_open_listener(nsp);
+        client::socket_listener listener;
+        {
+            std::lock_guard<std::mutex> lock(m_listener_mutex);
+            listener = m_socket_open_listener;
+        }
+        if(listener) listener(nsp);
+    }
+
+    void client_impl::notify_state_change(client::connection_state state)
+    {
+        client::state_listener listener;
+        {
+            std::lock_guard<std::mutex> lock(m_listener_mutex);
+            listener = m_state_listener;
+        }
+        if(listener) listener(state);
+    }
+
+    client::connection_state client_impl::get_connection_state() const
+    {
+        con_state state = m_con_state.load(std::memory_order_acquire);
+        switch(state) {
+            case con_opening:
+                return client::connection_state::connecting;
+            case con_opened:
+                return client::connection_state::connected;
+            case con_closing:
+                return client::connection_state::closing;
+            case con_closed:
+            default:
+                return client::connection_state::disconnected;
+        }
     }
 
     /*************************private:*************************/
@@ -296,9 +335,14 @@ namespace sio
             return;
         }
         while(0);
-        if(m_fail_listener)
+        client::con_listener listener;
         {
-            m_fail_listener();
+            std::lock_guard<std::mutex> lock(m_listener_mutex);
+            listener = m_fail_listener;
+        }
+        if(listener)
+        {
+            listener();
         }
     }
 
@@ -323,7 +367,7 @@ namespace sio
 
     void client_impl::send_impl(shared_ptr<const string> const& payload_ptr,frame::opcode::value opcode)
     {
-        if(m_con_state == con_opened)
+        if(m_con_state.load(std::memory_order_acquire) == con_opened)
         {
             lib::error_code ec;
             m_client.send(m_con,*payload_ptr,opcode,ec);
@@ -350,13 +394,19 @@ namespace sio
         {
             return;
         }
-        if(m_con_state == con_closed)
+        if(m_con_state.load(std::memory_order_acquire) == con_closed)
         {
-            m_con_state = con_opening;
+            m_con_state.store(con_opening, std::memory_order_release);
+            notify_state_change(client::connection_state::reconnecting);
             m_reconn_made++;
             this->reset_states();
             LOG("Reconnecting..."<<endl);
-            if(m_reconnecting_listener) m_reconnecting_listener();
+            client::con_listener listener;
+            {
+                std::lock_guard<std::mutex> lock(m_listener_mutex);
+                listener = m_reconnecting_listener;
+            }
+            if(listener) listener();
             m_client.get_io_service().dispatch(std::bind(&client_impl::connect_impl,this,m_base_url,m_query_string));
         }
     }
@@ -396,21 +446,27 @@ namespace sio
 
     void client_impl::on_fail(connection_hdl)
     {
-        if (m_con_state == con_closing) {
+        if (m_con_state.load(std::memory_order_acquire) == con_closing) {
             LOG("Connection failed while closing." << endl);
             this->close();
             return;
         }
 
         m_con.reset();
-        m_con_state = con_closed;
+        m_con_state.store(con_closed, std::memory_order_release);
+        notify_state_change(client::connection_state::disconnected);
         this->sockets_invoke_void(&sio::socket::on_disconnect);
         LOG("Connection failed." << endl);
         if(m_reconn_made<m_reconn_attempts && !m_abort_retries)
         {
             LOG("Reconnect for attempt:"<<m_reconn_made<<endl);
             unsigned delay = this->next_delay();
-            if(m_reconnect_listener) m_reconnect_listener(m_reconn_made,delay);
+            client::reconnect_listener listener;
+            {
+                std::lock_guard<std::mutex> lock(m_listener_mutex);
+                listener = m_reconnect_listener;
+            }
+            if(listener) listener(m_reconn_made,delay);
             m_reconn_timer.reset(new asio::steady_timer(m_client.get_io_service()));
             asio::error_code ec;
             m_reconn_timer->expires_from_now(milliseconds(delay), ec);
@@ -418,32 +474,44 @@ namespace sio
         }
         else
         {
-            if(m_fail_listener)m_fail_listener();
+            client::con_listener listener;
+            {
+                std::lock_guard<std::mutex> lock(m_listener_mutex);
+                listener = m_fail_listener;
+            }
+            if(listener) listener();
         }
     }
     
     void client_impl::on_open(connection_hdl con)
     {
-        if (m_con_state == con_closing) {
+        if (m_con_state.load(std::memory_order_acquire) == con_closing) {
             LOG("Connection opened while closing." << endl);
             this->close();
             return;
         }
 
         LOG("Connected." << endl);
-        m_con_state = con_opened;
+        m_con_state.store(con_opened, std::memory_order_release);
+        notify_state_change(client::connection_state::connected);
         m_con = con;
         m_reconn_made = 0;
         this->sockets_invoke_void(&sio::socket::on_open);
         this->socket("");
-        if(m_open_listener)m_open_listener();
+        client::con_listener listener;
+        {
+            std::lock_guard<std::mutex> lock(m_listener_mutex);
+            listener = m_open_listener;
+        }
+        if(listener) listener();
     }
     
     void client_impl::on_close(connection_hdl con)
     {
         LOG("Client Disconnected." << endl);
-        con_state m_con_state_was = m_con_state;
-        m_con_state = con_closed;
+        con_state m_con_state_was = m_con_state.load(std::memory_order_acquire);
+        m_con_state.store(con_closed, std::memory_order_release);
+        notify_state_change(client::connection_state::disconnected);
         lib::error_code ec;
         close::status::value code = close::status::normal;
         client_type::connection_ptr conn_ptr  = m_client.get_con_from_hdl(con, ec);
@@ -474,7 +542,12 @@ namespace sio
             {
                 LOG("Reconnect for attempt:"<<m_reconn_made<<endl);
                 unsigned delay = this->next_delay();
-                if(m_reconnect_listener) m_reconnect_listener(m_reconn_made,delay);
+                client::reconnect_listener listener;
+                {
+                    std::lock_guard<std::mutex> lock(m_listener_mutex);
+                    listener = m_reconnect_listener;
+                }
+                if(listener) listener(m_reconn_made,delay);
                 m_reconn_timer.reset(new asio::steady_timer(m_client.get_io_service()));
                 asio::error_code ec;
                 m_reconn_timer->expires_from_now(milliseconds(delay), ec);
@@ -483,10 +556,15 @@ namespace sio
             }
             reason = client::close_reason_drop;
         }
-        
-        if(m_close_listener)
+
+        client::close_listener listener;
         {
-            m_close_listener(reason);
+            std::lock_guard<std::mutex> lock(m_listener_mutex);
+            listener = m_close_listener;
+        }
+        if(listener)
+        {
+            listener(reason);
         }
     }
     
