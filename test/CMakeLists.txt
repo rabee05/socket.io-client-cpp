@@ -12,3 +12,7 @@ find_package(Threads REQUIRED)
 add_executable(sio_test sio_test.cpp)
 target_link_libraries(sio_test PRIVATE Catch2::Catch2WithMain sioclient Threads::Threads)
 add_test(sioclient_test sio_test)
+
+add_executable(thread_safety_test thread_safety_test.cpp)
+target_link_libraries(thread_safety_test PRIVATE Catch2::Catch2WithMain sioclient Threads::Threads)
+add_test(thread_safety_test thread_safety_test)
