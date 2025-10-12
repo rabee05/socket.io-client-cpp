@@ -2,6 +2,7 @@
 #define SIO_SOCKET_H
 #include "sio_message.h"
 #include <functional>
+#include <memory>
 namespace sio
 {
     class event_adapter;
@@ -47,19 +48,23 @@ namespace sio
     {
     public:
         typedef std::function<void(const std::string& name,message::ptr const& message,bool need_ack, message::list& ack_message)> event_listener_aux;
-        
+
         typedef std::function<void(event& event)> event_listener;
-        
+
+        typedef std::function<bool(message::ptr const& message)> simple_event_handler;
+
         typedef std::function<void(message::ptr const& message)> error_listener;
         
         typedef std::shared_ptr<socket> ptr;
-        
+
         ~socket();
         
         void on(std::string const& event_name,event_listener const& func);
-        
+
         void on(std::string const& event_name,event_listener_aux const& func);
-        
+
+        void on_with_ack(std::string const& event_name, simple_event_handler const& handler);
+
         void off(std::string const& event_name);
         
         void on_any(event_listener const& func);
@@ -99,7 +104,10 @@ namespace sio
         void operator=(socket const&){}
 
         class impl;
-        impl *m_impl;
+        struct impl_deleter {
+            void operator()(impl* p) const;
+        };
+        std::unique_ptr<impl, impl_deleter> m_impl;
     };
 }
 #endif // SIO_SOCKET_H

@@ -12,16 +12,19 @@ using std::stringstream;
 
 namespace sio
 {
-    client::client() : m_impl(new client_impl({})) {}
-    
+    void client::impl_deleter::operator()(client_impl* p) const {
+        delete p;
+    }
+
+    client::client() : m_impl(new client_impl(client_options{})) {}
+
     client::client(client_options const& options):
         m_impl(new client_impl(options))
     {
     }
-    
+
     client::~client()
     {
-        delete m_impl;
     }
     
     void client::set_open_listener(con_listener const& l)
@@ -58,7 +61,12 @@ namespace sio
     {
         m_impl->set_socket_close_listener(l);
     }
-    
+
+    void client::set_state_listener(state_listener const& l)
+    {
+        m_impl->set_state_listener(l);
+    }
+
     void client::clear_con_listeners()
     {
         m_impl->clear_con_listeners();
@@ -126,7 +134,12 @@ namespace sio
     {
         return m_impl->opened();
     }
-    
+
+    client::connection_state client::get_connection_state() const
+    {
+        return m_impl->get_connection_state();
+    }
+
     std::string const& client::get_sessionid() const
     {
         return m_impl->get_sessionid();
@@ -145,6 +158,18 @@ namespace sio
     void client::set_reconnect_delay_max(unsigned millis)
     {
         m_impl->set_reconnect_delay_max(millis);
+    }
+
+    void client::set_reconnect_config(const reconnect_config& config)
+    {
+        if (config.enabled) {
+            m_impl->set_reconnect_attempts(config.attempts);
+            m_impl->set_reconnect_delay(config.delay);
+            m_impl->set_reconnect_delay_max(config.delay_max);
+        } else {
+            // Disable reconnection by setting attempts to 0
+            m_impl->set_reconnect_attempts(0);
+        }
     }
 
     void client::set_logs_default()

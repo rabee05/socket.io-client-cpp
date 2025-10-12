@@ -4,6 +4,8 @@
 #include <asio/steady_timer.hpp>
 #include <asio/error_code.hpp>
 #include <queue>
+#include <vector>
+#include <atomic>
 #include <chrono>
 #include <cstdarg>
 #include <functional>
@@ -15,7 +17,7 @@
 #endif
 
 #define NULL_GUARD(_x_)  \
-    if(_x_ == NULL) return
+    if(_x_ == nullptr) return
 
 namespace sio
 {
@@ -171,11 +173,11 @@ namespace sio
         
         static event_listener s_null_event_listener;
         
-        static unsigned int s_global_event_id;
+        static std::atomic<unsigned int> s_global_event_id;
         
         sio::client_impl *m_client;
-        
-        bool m_connected;
+
+        std::atomic<bool> m_connected;
         std::string m_nsp;
         message::ptr m_auth;
         
@@ -211,11 +213,13 @@ namespace sio
     
     void socket::impl::on_any(event_listener_aux const& func)
     {
+        std::lock_guard<std::mutex> guard(m_event_mutex);
         m_event_listener = event_adapter::do_adapt(func);
     }
-    
+
     void socket::impl::on_any(event_listener const& func)
     {
+        std::lock_guard<std::mutex> guard(m_event_mutex);
         m_event_listener = func;
     }
 
@@ -263,7 +267,7 @@ namespace sio
         
     }
     
-    unsigned int socket::impl::s_global_event_id = 1;
+    std::atomic<unsigned int> socket::impl::s_global_event_id{1};
     
     void socket::impl::emit(std::string const& name, message::list const& msglist, std::function<void (message::list const&)> const& ack)
     {
@@ -272,7 +276,7 @@ namespace sio
         int pack_id;
         if(ack)
         {
-            pack_id = s_global_event_id++;
+            pack_id = s_global_event_id.fetch_add(1, std::memory_order_relaxed);
             std::lock_guard<std::mutex> guard(m_event_mutex);
             m_acks[pack_id] = ack;
         }
@@ -325,17 +329,18 @@ namespace sio
             m_connected = true;
             m_client->on_socket_opened(m_nsp);
 
-            while (true) {
-				m_packet_mutex.lock();
-				if(m_packet_queue.empty())
-				{
-					m_packet_mutex.unlock();
-					return;
-				}
-				sio::packet front_pack = std::move(m_packet_queue.front());
-                m_packet_queue.pop();
-				m_packet_mutex.unlock();
-				m_client->send(front_pack);
+            // Extract all queued packets under lock, then send without holding lock
+            std::vector<sio::packet> packets_to_send;
+            {
+                std::lock_guard<std::mutex> guard(m_packet_mutex);
+                while(!m_packet_queue.empty()) {
+                    packets_to_send.push_back(std::move(m_packet_queue.front()));
+                    m_packet_queue.pop();
+                }
+            }
+            // Send packets without holding the lock
+            for(auto& packet : packets_to_send) {
+                m_client->send(packet);
             }
         }
     }
@@ -343,8 +348,6 @@ namespace sio
     void socket::impl::on_close()
     {
         NULL_GUARD(m_client);
-        sio::client_impl *client = m_client;
-        m_client = NULL;
 
         if(m_connection_timer)
         {
@@ -352,14 +355,23 @@ namespace sio
             m_connection_timer.reset();
         }
         m_connected = false;
-		{
-			std::lock_guard<std::mutex> guard(m_packet_mutex);
-			while (!m_packet_queue.empty()) {
-				m_packet_queue.pop();
-			}
-		}
-        client->on_socket_closed(m_nsp);
-        client->remove_socket(m_nsp);
+        {
+            std::lock_guard<std::mutex> guard(m_packet_mutex);
+            while (!m_packet_queue.empty()) {
+                m_packet_queue.pop();
+            }
+        }
+
+        // Save client pointer and namespace before clearing to prevent use-after-free
+        sio::client_impl *client = m_client;
+        std::string nsp = m_nsp;
+
+        // Clear m_client to prevent reuse
+        m_client = nullptr;
+
+        // Notify and remove - don't use 'this' after remove_socket as it may delete this object
+        client->on_socket_closed(nsp);
+        client->remove_socket(nsp);
     }
     
     void socket::impl::on_open()
@@ -458,8 +470,15 @@ namespace sio
         bool needAck = msgId >= 0;
         event ev = event_adapter::create_event(nsp,name, std::move(message),needAck);
         event_listener func = this->get_bind_listener_locked(name);
-        if(func)func(ev);
-        if (m_event_listener) m_event_listener(ev);
+        if(func) func(ev);
+
+        event_listener any_listener;
+        {
+            std::lock_guard<std::mutex> guard(m_event_mutex);
+            any_listener = m_event_listener;
+        }
+        if(any_listener) any_listener(ev);
+
         if(needAck)
         {
             this->ack(msgId, name, ev.get_ack_message());
@@ -510,23 +529,25 @@ namespace sio
         NULL_GUARD(m_client);
         if(m_connected)
         {
-            while (true) {
-				m_packet_mutex.lock();
-				if(m_packet_queue.empty())
-				{
-					m_packet_mutex.unlock();
-					break;
-				}
-				sio::packet front_pack = std::move(m_packet_queue.front());
-                m_packet_queue.pop();
-				m_packet_mutex.unlock();
-				m_client->send(front_pack);
+            // Extract all queued packets under lock, then send without holding lock
+            std::vector<sio::packet> packets_to_send;
+            {
+                std::lock_guard<std::mutex> guard(m_packet_mutex);
+                while(!m_packet_queue.empty()) {
+                    packets_to_send.push_back(std::move(m_packet_queue.front()));
+                    m_packet_queue.pop();
+                }
             }
+            // Send queued packets without holding the lock
+            for(auto& packet : packets_to_send) {
+                m_client->send(packet);
+            }
+            // Send the new packet
             m_client->send(p);
         }
         else
         {
-			std::lock_guard<std::mutex> guard(m_packet_mutex);
+            std::lock_guard<std::mutex> guard(m_packet_mutex);
             m_packet_queue.push(p);
         }
     }
@@ -542,14 +563,17 @@ namespace sio
         return socket::event_listener();
     }
     
+    void socket::impl_deleter::operator()(impl* p) const {
+        delete p;
+    }
+
     socket::socket(client_impl* client,std::string const& nsp,message::ptr const& auth):
         m_impl(new impl(client,nsp,auth))
     {
     }
-    
+
     socket::~socket()
     {
-        delete m_impl;
     }
     
     void socket::on(std::string const& event_name,event_listener const& func)
@@ -570,6 +594,24 @@ namespace sio
     void socket::on_any(event_listener const& func)
     {
         m_impl->on_any(func);
+    }
+
+    void socket::on_with_ack(std::string const& event_name, simple_event_handler const& handler)
+    {
+        // Wrap the simple handler in a full event listener that handles ack automatically
+        event_listener wrapper = [handler](event& ev) {
+            if (ev.need_ack()) {
+                // Call the handler and use its return value to send ack
+                bool success = handler(ev.get_message());
+                message::list ack_msg;
+                ack_msg.push(bool_message::create(success));
+                ev.put_ack_message(ack_msg);
+            } else {
+                // No ack needed, just call the handler
+                handler(ev.get_message());
+            }
+        };
+        m_impl->on(event_name, wrapper);
     }
 
     void socket::off(std::string const& event_name)
