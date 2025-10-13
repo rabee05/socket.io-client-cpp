@@ -1,0 +1,30 @@
+{
+    "version": 4,
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/src/**",
+                "${workspaceFolder}/lib/websocketpp",
+                "${workspaceFolder}/lib/rapidjson/include",
+                "${workspaceFolder}/lib/asio/asio/include",
+                "/usr/include/openssl"
+            ],
+            "defines": [
+                "_WEBSOCKETPP_CPP11_STL_",
+                "_WEBSOCKETPP_CPP11_FUNCTIONAL_",
+                "_WEBSOCKETPP_CPP11_TYPE_TRAITS_",
+                "_WEBSOCKETPP_CPP11_CHRONO_",
+                "ASIO_STANDALONE",
+                "BOOST_DATE_TIME_NO_LIB",
+                "BOOST_REGEX_NO_LIB"
+            ],
+            "compilerPath": "/usr/bin/g++",
+            "cStandard": "c11",
+            "cppStandard": "c++11",
+            "intelliSenseMode": "linux-gcc-x64",
+            "configurationProvider": "ms-vscode.cmake-tools",
+            "compileCommands": "${workspaceFolder}/build/compile_commands.json"
+        }
+    ]
+}
