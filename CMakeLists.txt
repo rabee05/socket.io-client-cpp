@@ -4,6 +4,9 @@ PROJECT(sioclient
     VERSION 3.1.0
 )
 
+# Export compile commands for IDEs (VSCode, CLion, etc.)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 option(BUILD_SHARED_LIBS "Build the shared library" OFF)
 option(BUILD_UNIT_TESTS "Builds unit tests target" OFF)
 option(USE_SUBMODULES "Use source in local submodules instead of system libraries" ON)
