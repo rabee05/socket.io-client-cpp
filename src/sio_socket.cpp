@@ -16,43 +16,44 @@
 #define LOG(x)
 #endif
 
-#define NULL_GUARD(_x_)  \
-    if(_x_ == nullptr) return
+#define NULL_GUARD(_x_) \
+    if (_x_ == nullptr) \
+    return
 
 namespace sio
 {
     class event_adapter
     {
     public:
-        static void adapt_func(socket::event_listener_aux  const& func, event& event)
+        static void adapt_func(socket::event_listener_aux const &func, event &event)
         {
-            func(event.get_name(),event.get_message(),event.need_ack(),event.get_ack_message_impl());
+            func(event.get_name(), event.get_message(), event.need_ack(), event.get_ack_message_impl());
         }
-        
-        static inline socket::event_listener do_adapt(socket::event_listener_aux const& func)
+
+        static inline socket::event_listener do_adapt(socket::event_listener_aux const &func)
         {
-            return std::bind(&event_adapter::adapt_func, func,std::placeholders::_1);
+            return std::bind(&event_adapter::adapt_func, func, std::placeholders::_1);
         }
-        
-        static inline event create_event(std::string const& nsp,std::string const& name,message::list&& message,bool need_ack)
+
+        static inline event create_event(std::string const &nsp, std::string const &name, message::list &&message, bool need_ack)
         {
-            return event(nsp,name,message,need_ack);
+            return event(nsp, name, message, need_ack);
         }
     };
-    
-    const std::string& event::get_nsp() const
+
+    const std::string &event::get_nsp() const
     {
         return m_nsp;
     }
-    
-    const std::string& event::get_name() const
+
+    const std::string &event::get_name() const
     {
         return m_name;
     }
-    
-    const message::ptr& event::get_message() const
+
+    const message::ptr &event::get_message() const
     {
-        if(m_messages.size()>0)
+        if (m_messages.size() > 0)
             return m_messages[0];
         else
         {
@@ -61,220 +62,215 @@ namespace sio
         }
     }
 
-    const message::list& event::get_messages() const
+    const message::list &event::get_messages() const
     {
         return m_messages;
     }
-    
+
     bool event::need_ack() const
     {
         return m_need_ack;
     }
-    
-    void event::put_ack_message(message::list const& ack_message)
+
+    void event::put_ack_message(message::list const &ack_message)
     {
-        if(m_need_ack)
+        if (m_need_ack)
             m_ack_message = std::move(ack_message);
     }
-    
-    inline
-    event::event(std::string const& nsp,std::string const& name,message::list&& messages,bool need_ack):
-        m_nsp(nsp),
-        m_name(name),
-        m_messages(std::move(messages)),
-        m_need_ack(need_ack)
+
+    inline event::event(std::string const &nsp, std::string const &name, message::list &&messages, bool need_ack) : m_nsp(nsp),
+                                                                                                                    m_name(name),
+                                                                                                                    m_messages(std::move(messages)),
+                                                                                                                    m_need_ack(need_ack)
     {
     }
 
-    inline
-    event::event(std::string const& nsp,std::string const& name,message::list const& messages,bool need_ack):
-        m_nsp(nsp),
-        m_name(name),
-        m_messages(messages),
-        m_need_ack(need_ack)
+    inline event::event(std::string const &nsp, std::string const &name, message::list const &messages, bool need_ack) : m_nsp(nsp),
+                                                                                                                         m_name(name),
+                                                                                                                         m_messages(messages),
+                                                                                                                         m_need_ack(need_ack)
     {
     }
-    
-    message::list const& event::get_ack_message() const
+
+    message::list const &event::get_ack_message() const
     {
         return m_ack_message;
     }
-    
-    inline
-    message::list& event::get_ack_message_impl()
+
+    inline message::list &event::get_ack_message_impl()
     {
         return m_ack_message;
     }
-    
+
     class socket::impl
     {
     public:
-        
-        impl(client_impl *, std::string const&, message::ptr const&);
+        impl(client_impl *, std::string const &, message::ptr const &);
         ~impl();
-        
-        void on(std::string const& event_name,event_listener_aux const& func);
-        
-        void on(std::string const& event_name,event_listener const& func);
-        
-        void on_any(event_listener_aux const& func);
 
-        void on_any(event_listener const& func);
+        void on(std::string const &event_name, event_listener_aux const &func);
 
-        void off(std::string const& event_name);
-        
+        void on(std::string const &event_name, event_listener const &func);
+
+        void on_any(event_listener_aux const &func);
+
+        void on_any(event_listener const &func);
+
+        void off(std::string const &event_name);
+
         void off_all();
-        
-#define SYNTHESIS_SETTER(__TYPE__,__FIELD__) \
-    void set_##__FIELD__(__TYPE__ const& l) \
-        { m_##__FIELD__ = l;}
-        
-        SYNTHESIS_SETTER(error_listener, error_listener) //socket io errors
-        
+
+#define SYNTHESIS_SETTER(__TYPE__, __FIELD__) \
+    void set_##__FIELD__(__TYPE__ const &l)   \
+    {                                         \
+        m_##__FIELD__ = l;                    \
+    }
+
+        SYNTHESIS_SETTER(error_listener, error_listener) // socket io errors
+
 #undef SYNTHESIS_SETTER
-        
-        void on_error(error_listener const& l);
-        
+
+        void on_error(error_listener const &l);
+
         void off_error();
-        
+
         void close();
-        
-        void emit(std::string const& name, message::list const& msglist, std::function<void (message::list const&)> const& ack);
-        
-        std::string const& get_namespace() const {return m_nsp;}
-        
+
+        void emit(std::string const &name, message::list const &msglist, std::function<void(message::list const &)> const &ack);
+
+        std::string const &get_namespace() const { return m_nsp; }
+
     protected:
         void on_connected();
-        
+
         void on_close();
-        
+
         void on_open();
-        
-        void on_message_packet(packet const& packet);
-        
+
+        void on_message_packet(packet const &packet);
+
         void on_disconnect();
-        
+
     private:
-        
         // Message Parsing callbacks.
-        void on_socketio_event(const std::string& nsp, int msgId,const std::string& name, message::list&& message);
-        void on_socketio_ack(int msgId, message::list const& message);
-        void on_socketio_error(message::ptr const& err_message);
-        
-        event_listener get_bind_listener_locked(string const& event);
-        
-        void ack(int msgId,string const& name,message::list const& ack_message);
-        
+        void on_socketio_event(const std::string &nsp, int msgId, const std::string &name, message::list &&message);
+        void on_socketio_ack(int msgId, message::list const &message);
+        void on_socketio_error(message::ptr const &err_message);
+
+        event_listener get_bind_listener_locked(string const &event);
+
+        void ack(int msgId, string const &name, message::list const &ack_message);
+
         void timeout_connection(const asio::error_code &ec);
-        
+
         void send_connect();
-        
-        void send_packet(packet& p);
-        
+
+        void send_packet(packet &p);
+
         static event_listener s_null_event_listener;
-        
+
         static std::atomic<unsigned int> s_global_event_id;
-        
+
         sio::client_impl *m_client;
 
         std::atomic<bool> m_connected;
         std::string m_nsp;
         message::ptr m_auth;
-        
-        std::map<unsigned int, std::function<void (message::list const&)> > m_acks;
-        
+
+        std::map<unsigned int, std::function<void(message::list const &)>> m_acks;
+
         std::map<std::string, event_listener> m_event_binding;
-        
+
         event_listener m_event_listener;
 
         error_listener m_error_listener;
-        
+
         std::unique_ptr<asio::steady_timer> m_connection_timer;
-        
+
         std::queue<packet> m_packet_queue;
-        
+
         std::mutex m_event_mutex;
 
-		std::mutex m_packet_mutex;
-        
+        std::mutex m_packet_mutex;
+
         friend class socket;
     };
-    
-    void socket::impl::on(std::string const& event_name,event_listener_aux const& func)
+
+    void socket::impl::on(std::string const &event_name, event_listener_aux const &func)
     {
-        this->on(event_name,event_adapter::do_adapt(func));
+        this->on(event_name, event_adapter::do_adapt(func));
     }
-    
-    void socket::impl::on(std::string const& event_name,event_listener const& func)
+
+    void socket::impl::on(std::string const &event_name, event_listener const &func)
     {
         std::lock_guard<std::mutex> guard(m_event_mutex);
         m_event_binding[event_name] = func;
     }
-    
-    void socket::impl::on_any(event_listener_aux const& func)
+
+    void socket::impl::on_any(event_listener_aux const &func)
     {
         std::lock_guard<std::mutex> guard(m_event_mutex);
         m_event_listener = event_adapter::do_adapt(func);
     }
 
-    void socket::impl::on_any(event_listener const& func)
+    void socket::impl::on_any(event_listener const &func)
     {
         std::lock_guard<std::mutex> guard(m_event_mutex);
         m_event_listener = func;
     }
 
-    void socket::impl::off(std::string const& event_name)
+    void socket::impl::off(std::string const &event_name)
     {
         std::lock_guard<std::mutex> guard(m_event_mutex);
         auto it = m_event_binding.find(event_name);
-        if(it!=m_event_binding.end())
+        if (it != m_event_binding.end())
         {
             m_event_binding.erase(it);
         }
     }
-    
+
     void socket::impl::off_all()
     {
         std::lock_guard<std::mutex> guard(m_event_mutex);
         m_event_binding.clear();
     }
-    
-    void socket::impl::on_error(error_listener const& l)
+
+    void socket::impl::on_error(error_listener const &l)
     {
         m_error_listener = l;
     }
-    
+
     void socket::impl::off_error()
     {
         m_error_listener = nullptr;
     }
-    
-    socket::impl::impl(client_impl *client, std::string const& nsp, message::ptr const& auth):
-        m_client(client),
-        m_connected(false),
-        m_nsp(nsp),
-        m_auth(auth)
+
+    socket::impl::impl(client_impl *client, std::string const &nsp, message::ptr const &auth) : m_client(client),
+                                                                                                m_connected(false),
+                                                                                                m_nsp(nsp),
+                                                                                                m_auth(auth)
     {
         NULL_GUARD(client);
-        if(m_client->opened())
+        // Only send connect if client is opened
+        // This ensures namespace connections happen after the transport is ready
+        if (m_client->opened())
         {
             send_connect();
         }
     }
-    
+
     socket::impl::~impl()
     {
-        
     }
-    
+
     std::atomic<unsigned int> socket::impl::s_global_event_id{1};
-    
-    void socket::impl::emit(std::string const& name, message::list const& msglist, std::function<void (message::list const&)> const& ack)
+
+    void socket::impl::emit(std::string const &name, message::list const &msglist, std::function<void(message::list const &)> const &ack)
     {
         NULL_GUARD(m_client);
         message::ptr msg_ptr = msglist.to_array_message(name);
         int pack_id;
-        if(ack)
+        if (ack)
         {
             pack_id = s_global_event_id.fetch_add(1, std::memory_order_relaxed);
             std::lock_guard<std::mutex> guard(m_event_mutex);
@@ -284,10 +280,10 @@ namespace sio
         {
             pack_id = -1;
         }
-        packet p(m_nsp, msg_ptr,pack_id);
+        packet p(m_nsp, msg_ptr, pack_id);
         send_packet(p);
     }
-    
+
     void socket::impl::send_connect()
     {
         NULL_GUARD(m_client);
@@ -296,18 +292,18 @@ namespace sio
         m_connection_timer.reset(new asio::steady_timer(m_client->get_io_service()));
         asio::error_code ec;
         m_connection_timer->expires_from_now(std::chrono::milliseconds(20000), ec);
-        m_connection_timer->async_wait(std::bind(&socket::impl::timeout_connection,this, std::placeholders::_1));
+        m_connection_timer->async_wait(std::bind(&socket::impl::timeout_connection, this, std::placeholders::_1));
     }
-    
+
     void socket::impl::close()
     {
         NULL_GUARD(m_client);
-        if(m_connected)
+        if (m_connected)
         {
-            packet p(packet::type_disconnect,m_nsp);
+            packet p(packet::type_disconnect, m_nsp);
             send_packet(p);
-            
-            if(!m_connection_timer)
+
+            if (!m_connection_timer)
             {
                 m_connection_timer.reset(new asio::steady_timer(m_client->get_io_service()));
             }
@@ -316,15 +312,15 @@ namespace sio
             m_connection_timer->async_wait(std::bind(&socket::impl::on_close, this));
         }
     }
-    
+
     void socket::impl::on_connected()
     {
-        if(m_connection_timer)
+        if (m_connection_timer)
         {
             m_connection_timer->cancel();
             m_connection_timer.reset();
         }
-        if(!m_connected)
+        if (!m_connected)
         {
             m_connected = true;
             m_client->on_socket_opened(m_nsp);
@@ -333,23 +329,25 @@ namespace sio
             std::vector<sio::packet> packets_to_send;
             {
                 std::lock_guard<std::mutex> guard(m_packet_mutex);
-                while(!m_packet_queue.empty()) {
+                while (!m_packet_queue.empty())
+                {
                     packets_to_send.push_back(std::move(m_packet_queue.front()));
                     m_packet_queue.pop();
                 }
             }
             // Send packets without holding the lock
-            for(auto& packet : packets_to_send) {
+            for (auto &packet : packets_to_send)
+            {
                 m_client->send(packet);
             }
         }
     }
-    
+
     void socket::impl::on_close()
     {
         NULL_GUARD(m_client);
 
-        if(m_connection_timer)
+        if (m_connection_timer)
         {
             m_connection_timer->cancel();
             m_connection_timer.reset();
@@ -357,7 +355,8 @@ namespace sio
         m_connected = false;
         {
             std::lock_guard<std::mutex> guard(m_packet_mutex);
-            while (!m_packet_queue.empty()) {
+            while (!m_packet_queue.empty())
+            {
                 m_packet_queue.pop();
             }
         }
@@ -373,63 +372,64 @@ namespace sio
         client->on_socket_closed(nsp);
         client->remove_socket(nsp);
     }
-    
+
     void socket::impl::on_open()
     {
         send_connect();
     }
-    
+
     void socket::impl::on_disconnect()
     {
         NULL_GUARD(m_client);
-        if(m_connected)
+        if (m_connected)
         {
             m_connected = false;
-			std::lock_guard<std::mutex> guard(m_packet_mutex);
-            while (!m_packet_queue.empty()) {
+            std::lock_guard<std::mutex> guard(m_packet_mutex);
+            while (!m_packet_queue.empty())
+            {
                 m_packet_queue.pop();
             }
         }
     }
-    
-    void socket::impl::on_message_packet(packet const& p)
+
+    void socket::impl::on_message_packet(packet const &p)
     {
         NULL_GUARD(m_client);
-        if(p.get_nsp() == m_nsp)
+        if (p.get_nsp() == m_nsp)
         {
             switch (p.get_type())
             {
             // Connect open
             case packet::type_connect:
             {
-                LOG("Received Message type (Connect)"<<std::endl);
+                LOG("Received Message type (Connect)" << std::endl);
 
                 this->on_connected();
                 break;
             }
             case packet::type_disconnect:
             {
-                LOG("Received Message type (Disconnect)"<<std::endl);
+                LOG("Received Message type (Disconnect)" << std::endl);
                 this->on_close();
                 break;
             }
             case packet::type_event:
             case packet::type_binary_event:
             {
-                LOG("Received Message type (Event)"<<std::endl);
+                LOG("Received Message type (Event)" << std::endl);
                 const message::ptr ptr = p.get_message();
-                if(ptr->get_flag() == message::flag_array)
+                if (ptr->get_flag() == message::flag_array)
                 {
-                    const array_message* array_ptr = static_cast<const array_message*>(ptr.get());
-                    if(array_ptr->get_vector().size() >= 1&&array_ptr->get_vector()[0]->get_flag() == message::flag_string)
+                    const array_message *array_ptr = static_cast<const array_message *>(ptr.get());
+                    if (array_ptr->get_vector().size() >= 1 && array_ptr->get_vector()[0]->get_flag() == message::flag_string)
                     {
-                        const string_message* name_ptr = static_cast<const string_message*>(array_ptr->get_vector()[0].get());
+                        const string_message *name_ptr = static_cast<const string_message *>(array_ptr->get_vector()[0].get());
                         message::list mlist;
-                        for(size_t i = 1;i<array_ptr->get_vector().size();++i)
+                        for (size_t i = 1; i < array_ptr->get_vector().size(); ++i)
                         {
                             mlist.push(array_ptr->get_vector()[i]);
                         }
-                        this->on_socketio_event(p.get_nsp(), p.get_pack_id(),name_ptr->get_string(), std::move(mlist));
+                        this->on_socketio_event(p.get_nsp(), p.get_pack_id(), name_ptr->get_string(), std::move(mlist));
                     }
                 }
 
@@ -439,23 +439,23 @@ namespace sio
             case packet::type_ack:
             case packet::type_binary_ack:
             {
-                LOG("Received Message type (ACK)"<<std::endl);
+                LOG("Received Message type (ACK)" << std::endl);
                 const message::ptr ptr = p.get_message();
-                if(ptr->get_flag() == message::flag_array)
+                if (ptr->get_flag() == message::flag_array)
                 {
-					message::list msglist(ptr->get_vector());
-					this->on_socketio_ack(p.get_pack_id(),msglist);
+                    message::list msglist(ptr->get_vector());
+                    this->on_socketio_ack(p.get_pack_id(), msglist);
                 }
-				else
-				{
-					this->on_socketio_ack(p.get_pack_id(),message::list(ptr));
-				}
+                else
+                {
+                    this->on_socketio_ack(p.get_pack_id(), message::list(ptr));
+                }
                 break;
             }
                 // Error
             case packet::type_error:
             {
-                LOG("Received Message type (ERROR)"<<std::endl);
+                LOG("Received Message type (ERROR)" << std::endl);
                 this->on_socketio_error(p.get_message());
                 break;
             }
@@ -464,82 +464,88 @@ namespace sio
             }
         }
     }
-    
-    void socket::impl::on_socketio_event(const std::string& nsp,int msgId,const std::string& name, message::list && message)
+
+    void socket::impl::on_socketio_event(const std::string &nsp, int msgId, const std::string &name, message::list &&message)
     {
         bool needAck = msgId >= 0;
-        event ev = event_adapter::create_event(nsp,name, std::move(message),needAck);
+        event ev = event_adapter::create_event(nsp, name, std::move(message), needAck);
         event_listener func = this->get_bind_listener_locked(name);
-        if(func) func(ev);
+        if (func)
+            func(ev);
 
         event_listener any_listener;
         {
             std::lock_guard<std::mutex> guard(m_event_mutex);
             any_listener = m_event_listener;
         }
-        if(any_listener) any_listener(ev);
+        if (any_listener)
+            any_listener(ev);
 
-        if(needAck)
+        if (needAck)
         {
             this->ack(msgId, name, ev.get_ack_message());
         }
     }
-    
+
     void socket::impl::ack(int msgId, const string &, const message::list &ack_message)
     {
-        packet p(m_nsp, ack_message.to_array_message(),msgId,true);
+        packet p(m_nsp, ack_message.to_array_message(), msgId, true);
         send_packet(p);
     }
-    
-    void socket::impl::on_socketio_ack(int msgId, message::list const& message)
+
+    void socket::impl::on_socketio_ack(int msgId, message::list const &message)
     {
-        std::function<void (message::list const&)> l;
+        std::function<void(message::list const &)> l;
         {
             std::lock_guard<std::mutex> guard(m_event_mutex);
             auto it = m_acks.find(msgId);
-            if(it!=m_acks.end())
+            if (it != m_acks.end())
             {
                 l = it->second;
                 m_acks.erase(it);
             }
         }
-        if(l)l(message);
+        if (l)
+            l(message);
     }
-    
-    void socket::impl::on_socketio_error(message::ptr const& err_message)
+
+    void socket::impl::on_socketio_error(message::ptr const &err_message)
     {
-        if(m_error_listener)m_error_listener(err_message);
+        if (m_error_listener)
+            m_error_listener(err_message);
     }
-    
+
     void socket::impl::timeout_connection(const asio::error_code &ec)
     {
         NULL_GUARD(m_client);
-        if(ec)
+        if (ec)
         {
             return;
         }
         m_connection_timer.reset();
-        LOG("Connection timeout,close socket."<<std::endl);
-        //Should close socket if no connected message arrive.Otherwise we'll never ask for open again.
+        LOG("Connection timeout,close socket." << std::endl);
+        // Should close socket if no connected message arrive.Otherwise we'll never ask for open again.
         this->on_close();
     }
-    
+
     void socket::impl::send_packet(sio::packet &p)
     {
         NULL_GUARD(m_client);
-        if(m_connected)
+        if (m_connected)
         {
             // Extract all queued packets under lock, then send without holding lock
             std::vector<sio::packet> packets_to_send;
             {
                 std::lock_guard<std::mutex> guard(m_packet_mutex);
-                while(!m_packet_queue.empty()) {
+                while (!m_packet_queue.empty())
+                {
                     packets_to_send.push_back(std::move(m_packet_queue.front()));
                     m_packet_queue.pop();
                 }
             }
             // Send queued packets without holding the lock
-            for(auto& packet : packets_to_send) {
+            for (auto &packet : packets_to_send)
+            {
                 m_client->send(packet);
             }
             // Send the new packet
@@ -551,130 +557,145 @@ namespace sio
             m_packet_queue.push(p);
         }
     }
-    
+
     socket::event_listener socket::impl::get_bind_listener_locked(const string &event)
     {
         std::lock_guard<std::mutex> guard(m_event_mutex);
         auto it = m_event_binding.find(event);
-        if(it!=m_event_binding.end())
+        if (it != m_event_binding.end())
         {
             return it->second;
         }
         return socket::event_listener();
     }
-    
-    void socket::impl_deleter::operator()(impl* p) const {
+
+    void socket::impl_deleter::operator()(impl *p) const
+    {
         delete p;
     }
 
-    socket::socket(client_impl* client,std::string const& nsp,message::ptr const& auth):
-        m_impl(new impl(client,nsp,auth))
+    socket::socket(client_impl *client, std::string const &nsp, message::ptr const &auth) : m_impl(new impl(client, nsp, auth))
     {
     }
 
     socket::~socket()
     {
     }
-    
-    void socket::on(std::string const& event_name,event_listener const& func)
+
+    void socket::on(std::string const &event_name, event_listener const &func)
     {
         m_impl->on(event_name, func);
     }
-    
-    void socket::on(std::string const& event_name,event_listener_aux const& func)
+
+    void socket::on(std::string const &event_name, event_listener_aux const &func)
     {
         m_impl->on(event_name, func);
     }
-    
-    void socket::on_any(event_listener_aux const& func)
-    {
-        m_impl->on_any(func);
-    }
-    
-    void socket::on_any(event_listener const& func)
+
+    void socket::on_any(event_listener_aux const &func)
     {
         m_impl->on_any(func);
     }
 
-    void socket::on_with_ack(std::string const& event_name, simple_event_handler const& handler)
+    void socket::on_any(event_listener const &func)
     {
-        // Wrap the simple handler in a full event listener that handles ack automatically
-        event_listener wrapper = [handler](event& ev) {
-            if (ev.need_ack()) {
-                // Call the handler and use its return value to send ack
-                bool success = handler(ev.get_message());
-                message::list ack_msg;
-                ack_msg.push(bool_message::create(success));
+        m_impl->on_any(func);
+    }
+
+    void socket::on_with_ack(std::string const &event_name, event_handler_with_ack const &handler)
+    {
+        // Wrap the handler to automatically handle ack with custom data
+        event_listener wrapper = [handler](event &ev)
+        {
+            message::list ack_msg;
+            // Always call the handler - it can populate ack_msg if needed
+            handler(ev.get_message(), ack_msg);
+
+            // If ack is needed and handler provided data, send it
+            if (ev.need_ack() && ack_msg.size() > 0)
+            {
                 ev.put_ack_message(ack_msg);
-            } else {
-                // No ack needed, just call the handler
-                handler(ev.get_message());
             }
         };
         m_impl->on(event_name, wrapper);
     }
 
-    void socket::off(std::string const& event_name)
+    void socket::on_with_ack(std::string const &event_name, simple_event_handler const &handler)
+    {
+        // Adapt old API: handler returns bool, which we convert to [true|false] ack payload
+        event_handler_with_ack adapter = [handler](message::ptr const &msg, message::list &ack_msg)
+        {
+            bool success = false;
+            try
+            {
+                success = handler(msg);
+            }
+            catch (...)
+            {
+                success = false;
+            }
+            ack_msg.push(bool_message::create(success));
+        };
+        on_with_ack(event_name, adapter);
+    }
+
+    void socket::off(std::string const &event_name)
     {
         m_impl->off(event_name);
     }
-    
+
     void socket::off_all()
     {
         m_impl->off_all();
     }
-    
+
     void socket::close()
     {
         m_impl->close();
     }
-    
-    void socket::on_error(error_listener const& l)
+
+    void socket::on_error(error_listener const &l)
     {
         m_impl->on_error(l);
     }
-    
+
     void socket::off_error()
     {
         m_impl->off_error();
     }
 
-    void socket::emit(std::string const& name, message::list const& msglist, std::function<void (message::list const&)> const& ack)
+    void socket::emit(std::string const &name, message::list const &msglist, std::function<void(message::list const &)> const &ack)
     {
-        m_impl->emit(name, msglist,ack);
+        m_impl->emit(name, msglist, ack);
     }
-    
-    std::string const& socket::get_namespace() const
+
+    std::string const &socket::get_namespace() const
     {
         return m_impl->get_namespace();
     }
-    
+
     void socket::on_connected()
     {
         m_impl->on_connected();
     }
-    
+
     void socket::on_close()
     {
         m_impl->on_close();
     }
-    
+
     void socket::on_open()
     {
         m_impl->on_open();
     }
-    
-    void socket::on_message_packet(packet const& p)
+
+    void socket::on_message_packet(packet const &p)
     {
         m_impl->on_message_packet(p);
     }
-    
+
     void socket::on_disconnect()
     {
         m_impl->on_disconnect();
     }
 }
-
-
-
-
