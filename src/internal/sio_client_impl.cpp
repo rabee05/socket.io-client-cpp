@@ -132,7 +132,7 @@ namespace sio
 
         this->reset_states();
         m_abort_retries = false;
-        m_client.get_io_service().dispatch(std::bind(&client_impl::connect_impl, this, uri, m_query_string));
+        asio::dispatch(m_client.get_io_context(), std::bind(&client_impl::connect_impl, this, uri, m_query_string));
         m_network_thread.reset(new thread(std::bind(&client_impl::run_loop, this))); // uri lifecycle?
     }
 
@@ -174,7 +174,7 @@ namespace sio
         notify_state_change(client::connection_state::closing);
         m_abort_retries = true;
         this->sockets_invoke_void(&sio::socket::close);
-        m_client.get_io_service().dispatch(std::bind(&client_impl::close_impl, this, close::status::normal, "End by user"));
+        asio::dispatch(m_client.get_io_context(), std::bind(&client_impl::close_impl, this, close::status::normal, "End by user"));
     }
 
     void client_impl::sync_close()
@@ -182,7 +182,7 @@ namespace sio
         m_con_state.store(con_closing, std::memory_order_release);
         m_abort_retries = true;
         this->sockets_invoke_void(&sio::socket::close);
-        m_client.get_io_service().dispatch(std::bind(&client_impl::close_impl, this, close::status::normal, "End by user"));
+        asio::dispatch(m_client.get_io_context(), std::bind(&client_impl::close_impl, this, close::status::normal, "End by user"));
         if (m_network_thread)
         {
             m_network_thread->join();
@@ -225,7 +225,7 @@ namespace sio
 
     asio::io_context &client_impl::get_io_service()
     {
-        return m_client.get_io_service();
+        return m_client.get_io_context();
     }
 
     void client_impl::on_socket_closed(string const &nsp)
@@ -410,7 +410,7 @@ namespace sio
             return;
         }
         LOG("Ping timeout" << endl);
-        m_client.get_io_service().dispatch(std::bind(&client_impl::close_impl, this, close::status::policy_violation, "Ping timeout"));
+        asio::dispatch(m_client.get_io_context(), std::bind(&client_impl::close_impl, this, close::status::policy_violation, "Ping timeout"));
     }
 
     void client_impl::timeout_reconnect(asio::error_code const &ec)
@@ -433,7 +433,7 @@ namespace sio
             }
             if (listener)
                 listener();
-            m_client.get_io_service().dispatch(std::bind(&client_impl::connect_impl, this, m_base_url, m_query_string));
+            asio::dispatch(m_client.get_io_context(), std::bind(&client_impl::connect_impl, this, m_base_url, m_query_string));
         }
     }
 
@@ -503,9 +503,8 @@ namespace sio
             }
             if (listener)
                 listener(m_reconn_made, delay);
-            m_reconn_timer.reset(new asio::steady_timer(m_client.get_io_service()));
-            asio::error_code ec;
-            m_reconn_timer->expires_from_now(milliseconds(delay), ec);
+            m_reconn_timer.reset(new asio::steady_timer(m_client.get_io_context()));
+            m_reconn_timer->expires_after(milliseconds(delay));
             m_reconn_timer->async_wait(std::bind(&client_impl::timeout_reconnect, this, std::placeholders::_1));
         }
         else
@@ -589,9 +588,8 @@ namespace sio
             }
             if (listener)
                 listener(m_reconn_made, delay);
-            m_reconn_timer.reset(new asio::steady_timer(m_client.get_io_service()));
-            asio::error_code ec;
-            m_reconn_timer->expires_from_now(milliseconds(delay), ec);
+            m_reconn_timer.reset(new asio::steady_timer(m_client.get_io_context()));
+            m_reconn_timer->expires_after(milliseconds(delay));
             m_reconn_timer->async_wait(std::bind(&client_impl::timeout_reconnect, this, std::placeholders::_1));
             return;
         }
@@ -664,7 +662,7 @@ namespace sio
         }
     failed:
         // just close it.
-        m_client.get_io_service().dispatch(std::bind(&client_impl::close_impl, this, close::status::policy_violation, "Handshake error"));
+        asio::dispatch(m_client.get_io_context(), std::bind(&client_impl::close_impl, this, close::status::policy_violation, "Handshake error"));
     }
 
     void client_impl::on_ping()
@@ -723,7 +721,7 @@ namespace sio
     void client_impl::on_encode(bool isBinary, shared_ptr<const string> const &payload)
     {
         LOG("encoded payload length:" << payload->length() << endl);
-        m_client.get_io_service().dispatch(std::bind(&client_impl::send_impl, this, payload, isBinary ? frame::opcode::binary : frame::opcode::text));
+        asio::dispatch(m_client.get_io_context(), std::bind(&client_impl::send_impl, this, payload, isBinary ? frame::opcode::binary : frame::opcode::text));
     }
 
     void client_impl::clear_timers()
@@ -732,7 +730,7 @@ namespace sio
         asio::error_code ec;
         if (m_ping_timeout_timer)
         {
-            m_ping_timeout_timer->cancel(ec);
+            m_ping_timeout_timer->cancel();
             m_ping_timeout_timer.reset();
         }
     }
@@ -745,7 +743,7 @@ namespace sio
         }
 
         asio::error_code ec;
-        m_ping_timeout_timer->expires_from_now(milliseconds(m_ping_interval + m_ping_timeout), ec);
+        m_ping_timeout_timer->expires_after(milliseconds(m_ping_interval + m_ping_timeout));
         m_ping_timeout_timer->async_wait(std::bind(&client_impl::timeout_ping, this, std::placeholders::_1));
     }
 
