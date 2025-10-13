@@ -6,7 +6,7 @@
             "includePath": [
                 "${workspaceFolder}/src/**",
                 "${workspaceFolder}/lib/websocketpp",
-                "${workspaceFolder}/lib/rapidjson/include",
+                "${workspaceFolder}/lib/simdjson/include",
                 "${workspaceFolder}/lib/asio/asio/include",
                 "/usr/include/openssl"
             ],
@@ -23,8 +23,7 @@
             "cStandard": "c11",
             "cppStandard": "c++11",
             "intelliSenseMode": "linux-gcc-x64",
-            "configurationProvider": "ms-vscode.cmake-tools",
-            "compileCommands": "${workspaceFolder}/build/compile_commands.json"
+            "configurationProvider": "ms-vscode.cmake-tools"
         }
     ]
 }
