@@ -58,7 +58,6 @@ set(ALL_SRC
     "src/internal/sio_client_impl.cpp"
     "src/internal/sio_packet.cpp"
 )
-add_library(sioclient ${ALL_SRC})
 
 if(USE_SUBMODULES)
     set(MODULE_INCLUDE_DIRS
@@ -70,13 +69,15 @@ else()
     find_package(websocketpp CONFIG REQUIRED)
     find_package(asio CONFIG REQUIRED)
     find_package(RapidJSON CONFIG REQUIRED)
-    target_link_libraries(sioclient PRIVATE websocketpp::websocketpp asio::asio rapidjson)
 endif()
 
 include(GNUInstallDirs)
+find_package(Threads REQUIRED)
 
-target_include_directories(sioclient
-    PUBLIC
+# Create library with different configurations based on build type
+add_library(sioclient ${ALL_SRC})
+
+target_include_directories(sioclient PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE
@@ -84,9 +85,27 @@ target_include_directories(sioclient
 )
 
 target_compile_features(sioclient PUBLIC cxx_std_11)
-
-find_package(Threads REQUIRED)
 target_link_libraries(sioclient PUBLIC Threads::Threads)
+
+if (NOT USE_SUBMODULES)
+    target_link_libraries(sioclient PRIVATE websocketpp::websocketpp asio asio::asio rapidjson)
+endif()
+
+# Debug build: HTTP only (no TLS)
+# Release build: HTTPS only (with TLS)
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    find_package(OpenSSL REQUIRED)
+    if(OPENSSL_FOUND)
+        target_include_directories(sioclient PRIVATE ${OPENSSL_INCLUDE_DIR})
+        target_link_libraries(sioclient PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+        target_compile_definitions(sioclient PRIVATE -DSIO_TLS)
+        message(STATUS "Socket.IO: Release build - HTTPS only (with TLS)")
+    else()
+        message(FATAL_ERROR "OpenSSL required for Release builds")
+    endif()
+else()
+    message(STATUS "Socket.IO: Debug build - HTTP only (no TLS)")
+endif()
 
 if(BUILD_SHARED_LIBS)
     set_target_properties(sioclient
@@ -97,47 +116,6 @@ if(BUILD_SHARED_LIBS)
 endif()
 
 list(APPEND TARGET_LIBRARIES sioclient)
-
-find_package(OpenSSL)
-
-if(OPENSSL_FOUND)
-    add_library(sioclient_tls ${ALL_SRC})
-    target_include_directories(sioclient_tls PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
-        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-        PRIVATE
-        ${MODULE_INCLUDE_DIRS}
-        ${OPENSSL_INCLUDE_DIR}
-    )
-
-    target_compile_features(sioclient_tls PUBLIC cxx_std_11)
-    target_link_libraries(sioclient_tls PRIVATE OpenSSL::SSL OpenSSL::Crypto)
-    if (NOT USE_SUBMODULES)
-        target_link_libraries(sioclient_tls PRIVATE websocketpp::websocketpp asio asio::asio rapidjson)
-    endif()
-
-    target_compile_definitions(sioclient_tls PRIVATE -DSIO_TLS)
-
-    # In Release builds, enforce HTTPS-only connections (reject http://)
-    if(CMAKE_BUILD_TYPE STREQUAL "Release")
-        target_compile_definitions(sioclient_tls PRIVATE -DPRODUCTION_BUILD)
-        message(STATUS "Socket.IO TLS: Production mode - HTTPS only (HTTP rejected)")
-    else()
-        message(STATUS "Socket.IO TLS: Development mode - HTTP and HTTPS allowed")
-    endif()
-
-    target_link_libraries(sioclient_tls PUBLIC Threads::Threads)
-
-    if(BUILD_SHARED_LIBS)
-        set_target_properties(sioclient_tls
-            PROPERTIES
-            SOVERSION ${PROJECT_VERSION_MAJOR}
-            VERSION ${PROJECT_VERSION}
-        )
-    endif()
-
-    list(APPEND TARGET_LIBRARIES sioclient_tls)
-endif()
 
 export(PACKAGE sioclient)
 
