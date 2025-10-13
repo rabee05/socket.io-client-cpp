@@ -65,13 +65,13 @@ set(ALL_SRC
 if(USE_SUBMODULES)
     set(MODULE_INCLUDE_DIRS
         ${CMAKE_CURRENT_LIST_DIR}/lib/websocketpp
-        ${CMAKE_CURRENT_LIST_DIR}/lib/rapidjson/include
+        ${CMAKE_CURRENT_LIST_DIR}/lib/simdjson/include
         ${CMAKE_CURRENT_LIST_DIR}/lib/asio/asio/include
     )
 else()
     find_package(websocketpp CONFIG REQUIRED)
     find_package(asio CONFIG REQUIRED)
-    find_package(RapidJSON CONFIG REQUIRED)
+    find_package(simdjson CONFIG REQUIRED)
 endif()
 
 include(GNUInstallDirs)
@@ -91,7 +91,12 @@ target_compile_features(sioclient PUBLIC cxx_std_11)
 target_link_libraries(sioclient PUBLIC Threads::Threads)
 
 if (NOT USE_SUBMODULES)
-    target_link_libraries(sioclient PRIVATE websocketpp::websocketpp asio asio::asio rapidjson)
+    target_link_libraries(sioclient PRIVATE websocketpp::websocketpp asio asio::asio simdjson::simdjson)
+endif()
+
+# Add simdjson source file when using submodules
+if(USE_SUBMODULES)
+    target_sources(sioclient PRIVATE ${CMAKE_CURRENT_LIST_DIR}/lib/simdjson/singleheader/simdjson.cpp)
 endif()
 
 # Debug build: HTTP only (no TLS)
