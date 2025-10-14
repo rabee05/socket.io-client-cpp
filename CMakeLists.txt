@@ -11,6 +11,8 @@ option(BUILD_SHARED_LIBS "Build the shared library" OFF)
 option(BUILD_UNIT_TESTS "Builds unit tests target" OFF)
 option(USE_SUBMODULES "Use source in local submodules instead of system libraries" ON)
 option(DISABLE_LOGGING "Do not print logging messages" OFF)
+option(ENABLE_LTO "Enable link-time optimization in Release" ON)
+option(ENABLE_SANITIZERS "Enable Address/UB sanitizers in Debug" OFF)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(DEFAULT_BUILD_TYPE "Release")
@@ -75,9 +77,8 @@ else()
 endif()
 
 include(GNUInstallDirs)
-find_package(Threads REQUIRED)
 
-# Create library with different configurations based on build type
+# Build HTTP-only library (sioclient)
 add_library(sioclient ${ALL_SRC})
 
 target_include_directories(sioclient PUBLIC
@@ -88,6 +89,8 @@ target_include_directories(sioclient PUBLIC
 )
 
 target_compile_features(sioclient PUBLIC cxx_std_11)
+
+find_package(Threads REQUIRED)
 target_link_libraries(sioclient PUBLIC Threads::Threads)
 
 if (NOT USE_SUBMODULES)
@@ -99,20 +102,22 @@ if(USE_SUBMODULES)
     target_sources(sioclient PRIVATE ${CMAKE_CURRENT_LIST_DIR}/lib/simdjson/singleheader/simdjson.cpp)
 endif()
 
-# Debug build: HTTP only (no TLS)
-# Release build: HTTPS only (with TLS)
+# Apply build-type optimizations to HTTP library
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    find_package(OpenSSL REQUIRED)
-    if(OPENSSL_FOUND)
-        target_include_directories(sioclient PRIVATE ${OPENSSL_INCLUDE_DIR})
-        target_link_libraries(sioclient PRIVATE OpenSSL::SSL OpenSSL::Crypto)
-        target_compile_definitions(sioclient PRIVATE -DSIO_TLS)
-        message(STATUS "Socket.IO: Release build - HTTPS only (with TLS)")
-    else()
-        message(FATAL_ERROR "OpenSSL required for Release builds")
+    if(ENABLE_LTO)
+        include(CheckIPOSupported)
+        check_ipo_supported(RESULT ipo_supported OUTPUT ipo_err)
+        if(ipo_supported)
+            set_property(TARGET sioclient PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+            message(STATUS "LTO enabled for sioclient")
+        else()
+            message(WARNING "LTO not supported: ${ipo_err}")
+        endif()
     endif()
-else()
-    message(STATUS "Socket.IO: Debug build - HTTP only (no TLS)")
+elseif(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(sioclient PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+    target_link_options(sioclient PRIVATE -fsanitize=address,undefined)
+    message(STATUS "Sanitizers enabled (ASan/UBSan)")
 endif()
 
 if(BUILD_SHARED_LIBS)
@@ -124,6 +129,62 @@ if(BUILD_SHARED_LIBS)
 endif()
 
 list(APPEND TARGET_LIBRARIES sioclient)
+
+# Build HTTPS library with TLS support (sioclient_tls)
+find_package(OpenSSL)
+
+if(OPENSSL_FOUND)
+    add_library(sioclient_tls ${ALL_SRC})
+
+    target_include_directories(sioclient_tls PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+        PRIVATE
+        ${MODULE_INCLUDE_DIRS}
+        ${OPENSSL_INCLUDE_DIR}
+    )
+
+    target_compile_features(sioclient_tls PUBLIC cxx_std_11)
+    target_compile_definitions(sioclient_tls PRIVATE -DSIO_TLS)
+
+    target_link_libraries(sioclient_tls PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+    target_link_libraries(sioclient_tls PUBLIC Threads::Threads)
+
+    if (NOT USE_SUBMODULES)
+        target_link_libraries(sioclient_tls PRIVATE websocketpp::websocketpp asio asio::asio simdjson::simdjson)
+    endif()
+
+    # Add simdjson source file when using submodules
+    if(USE_SUBMODULES)
+        target_sources(sioclient_tls PRIVATE ${CMAKE_CURRENT_LIST_DIR}/lib/simdjson/singleheader/simdjson.cpp)
+    endif()
+
+    # Apply build-type optimizations to HTTPS library
+    if(CMAKE_BUILD_TYPE STREQUAL "Release")
+        if(ENABLE_LTO)
+            check_ipo_supported(RESULT ipo_supported OUTPUT ipo_err)
+            if(ipo_supported)
+                set_property(TARGET sioclient_tls PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+                message(STATUS "LTO enabled for sioclient_tls")
+            else()
+                message(WARNING "LTO not supported: ${ipo_err}")
+            endif()
+        endif()
+    elseif(ENABLE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(sioclient_tls PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+        target_link_options(sioclient_tls PRIVATE -fsanitize=address,undefined)
+    endif()
+
+    if(BUILD_SHARED_LIBS)
+        set_target_properties(sioclient_tls
+            PROPERTIES
+            SOVERSION ${PROJECT_VERSION_MAJOR}
+            VERSION ${PROJECT_VERSION}
+        )
+    endif()
+
+    list(APPEND TARGET_LIBRARIES sioclient_tls)
+endif()
 
 export(PACKAGE sioclient)
 
