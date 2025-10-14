@@ -117,6 +117,11 @@ namespace sio
         m_reconn_made = 0;
 
         string query_str;
+        // Pre-reserve to minimize reallocations (approximate)
+        size_t approx = 0;
+        for (auto &kv : query)
+            approx += kv.first.size() + kv.second.size() + 2;
+        query_str.reserve(approx + 8);
         for (map<string, string>::const_iterator it = query.begin(); it != query.end(); ++it)
         {
             query_str.append("&");
@@ -439,16 +444,23 @@ namespace sio
 
     unsigned client_impl::next_delay() const
     {
-        // Exponential backoff: double the delay each attempt, capped at delay_max
-        // Base 2 pattern: 3s -> 6s -> 12s -> 24s -> 48s -> 60s (cap)
-        unsigned reconn_made = min<unsigned>(m_reconn_made, 32);
-        double growth = pow(2.0, static_cast<int>(reconn_made));
-        unsigned delay_calculated = static_cast<unsigned>(min<double>(m_reconn_delay * growth, m_reconn_delay_max));
+        // Exponential backoff with jitter-free saturation to m_reconn_delay_max
+        unsigned delay = m_reconn_delay;
+        unsigned attempts = m_reconn_made;
+        while (attempts-- > 0 && delay < m_reconn_delay_max)
+        {
+            if (delay > m_reconn_delay_max / 2)
+            { // next doubling would exceed max
+                delay = m_reconn_delay_max;
+                break;
+            }
+            delay *= 2;
+        }
         LOG("next_delay: attempt=" << m_reconn_made
                                    << ", base_delay=" << m_reconn_delay
                                    << ", max_delay=" << m_reconn_delay_max
-                                   << ", next_delay=" << delay_calculated << endl);
-        return delay_calculated;
+                                   << ", next_delay=" << delay << endl);
+        return delay;
     }
 
     socket::ptr client_impl::get_socket_locked(string const &nsp)
@@ -467,14 +479,16 @@ namespace sio
 
     void client_impl::sockets_invoke_void(void (sio::socket::*fn)(void))
     {
-        map<const string, socket::ptr> socks;
+        std::vector<socket::ptr> sockets;
         {
-            lock_guard<mutex> guard(m_socket_mutex);
-            socks.insert(m_sockets.begin(), m_sockets.end());
+            std::lock_guard<std::mutex> guard(m_socket_mutex);
+            sockets.reserve(m_sockets.size());
+            for (auto &kv : m_sockets)
+                sockets.emplace_back(kv.second);
         }
-        for (auto it = socks.begin(); it != socks.end(); ++it)
+        for (auto &s : sockets)
         {
-            ((*(it->second)).*fn)();
+            ((*s).*fn)();
         }
     }
 
