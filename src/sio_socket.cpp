@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstdarg>
 #include <functional>
+#include <unordered_map>
 
 #if (DEBUG || _DEBUG) && !defined(SIO_DISABLE_LOGGING)
 #define LOG(x) std::cout << x
@@ -177,9 +178,9 @@ namespace sio
         std::string m_nsp;
         message::ptr m_auth;
 
-        std::map<unsigned int, std::function<void(message::list const &)>> m_acks;
+        std::unordered_map<unsigned int, std::function<void(message::list const &)>> m_acks;
 
-        std::map<std::string, event_listener> m_event_binding;
+        std::unordered_map<std::string, event_listener> m_event_binding;
 
         event_listener m_event_listener;
 

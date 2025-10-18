@@ -10,6 +10,7 @@
 #include <cassert>
 #include <algorithm>
 #include <sstream>
+#include <cstddef>
 
 #define kBIN_PLACE_HOLDER "_placeholder"
 
@@ -20,6 +21,7 @@ namespace sio
     // Forward declarations
     void accept_message(message const &msg, string &json_str, vector<shared_ptr<const string>> &buffers, bool is_first = true);
     string escape_json_string(const string &input);
+    inline bool parse_unsigned_decimal(const char *p, size_t len, unsigned &out);
 
     // Helper: Escape JSON string
     string escape_json_string(const string &input)
@@ -71,6 +73,28 @@ namespace sio
         return out;
     }
 
+    // Fast, no-throw decimal parser for non-negative integers.
+    // Returns false if any character is non-digit or length is zero.
+    inline bool parse_unsigned_decimal(const char *p, size_t len, unsigned &out)
+    {
+        if (len == 0 || p == nullptr)
+            return false;
+        unsigned value = 0;
+        for (size_t i = 0; i < len; ++i)
+        {
+            unsigned char c = static_cast<unsigned char>(p[i]);
+            if (c < '0' || c > '9')
+                return false;
+            unsigned digit = static_cast<unsigned>(c - '0');
+            // Check for overflow before multiplication
+            if (value > (UINT_MAX - digit) / 10u)
+                return false;
+            value = value * 10u + digit;
+        }
+        out = value;
+        return true;
+    }
+
     void accept_bool_message(bool_message const &msg, string &json_str)
     {
         json_str += msg.get_bool() ? "true" : "false";
@@ -111,6 +135,11 @@ namespace sio
 
     void accept_array_message(array_message const &msg, string &json_str, vector<shared_ptr<const string>> &buffers)
     {
+        // Heuristic to reduce reallocations during array serialization
+        if (!msg.get_vector().empty())
+        {
+            json_str.reserve(json_str.size() + msg.get_vector().size() * 8);
+        }
         json_str += "[";
         bool first = true;
         for (vector<message::ptr>::const_iterator it = msg.get_vector().begin(); it != msg.get_vector().end(); ++it)
@@ -125,6 +154,11 @@ namespace sio
 
     void accept_object_message(object_message const &msg, string &json_str, vector<shared_ptr<const string>> &buffers)
     {
+        // Heuristic reserve: assume average 16 bytes per field (key+value delimiters)
+        if (!msg.get_map().empty())
+        {
+            json_str.reserve(json_str.size() + msg.get_map().size() * 16);
+        }
         json_str += "{";
         bool first = true;
         for (map<string, message::ptr>::const_iterator it = msg.get_map().begin(); it != msg.get_map().end(); ++it)
@@ -195,15 +229,18 @@ namespace sio
             {
                 string_view sv = value.get_string();
                 string str(sv.data(), sv.length());
-                return string_message::create(str);
+                return string_message::create(std::move(str));
             }
             else if (value.is_array())
             {
                 message::ptr ptr = array_message::create();
                 auto arr = value.get_array();
+                // Heuristic small reserve to reduce initial growth.
+                auto *vec = &static_cast<array_message *>(ptr.get())->get_vector();
+                vec->reserve(vec->size() + 8);
                 for (auto child : arr)
                 {
-                    static_cast<array_message *>(ptr.get())->get_vector().push_back(from_json(child, buffers));
+                    vec->push_back(from_json(child, buffers));
                 }
                 return ptr;
             }
@@ -232,11 +269,14 @@ namespace sio
 
                 // Real object message
                 message::ptr ptr = object_message::create();
-                for (auto field : obj)
                 {
-                    string_view key_sv = field.key;
-                    string key(key_sv.data(), key_sv.length());
-                    static_cast<object_message *>(ptr.get())->get_map()[key] = from_json(field.value, buffers);
+                    auto &mp = static_cast<object_message *>(ptr.get())->get_map();
+                    for (auto field : obj)
+                    {
+                        string_view key_sv = field.key;
+                        string key(key_sv.data(), key_sv.length());
+                        mp.emplace(std::move(key), from_json(field.value, buffers));
+                    }
                 }
                 return ptr;
             }
@@ -353,7 +393,16 @@ namespace sio
             if (_type == type_binary_event || _type == type_binary_ack)
             {
                 size_t score_pos = payload_ptr.find('-');
-                _pending_buffers = static_cast<unsigned>(std::stoul(payload_ptr.substr(pos, score_pos - pos)));
+                if (score_pos == string::npos || score_pos <= pos)
+                {
+                    return false;
+                }
+                unsigned pending = 0;
+                if (!parse_unsigned_decimal(payload_ptr.data() + pos, score_pos - pos, pending))
+                {
+                    return false;
+                }
+                _pending_buffers = pending;
                 pos = score_pos + 1;
             }
         }
@@ -394,11 +443,10 @@ namespace sio
 
         if (pos < json_pos)
         { // we've got pack id.
-            std::string pack_id_str = payload_ptr.substr(pos, json_pos - pos);
-
-            if (std::all_of(pack_id_str.begin(), pack_id_str.end(), ::isdigit))
+            unsigned pid = 0;
+            if (parse_unsigned_decimal(payload_ptr.data() + pos, json_pos - pos, pid))
             {
-                _pack_id = std::stoi(pack_id_str);
+                _pack_id = static_cast<int>(pid);
             }
             else
             {
@@ -409,6 +457,7 @@ namespace sio
         if (_frame == frame_message && (_type == type_binary_event || _type == type_binary_ack))
         {
             // parse later when all buffers are arrived.
+            _buffers.reserve(1 + _pending_buffers);
             _buffers.push_back(make_shared<string>(payload_ptr.data() + json_pos, payload_ptr.length() - json_pos));
             return true;
         }
@@ -438,6 +487,7 @@ namespace sio
 
         bool hasMessage = false;
         string json_str;
+        json_str.reserve(256); // small heuristic to reduce early reallocations
 
         if (_message)
         {
@@ -480,7 +530,11 @@ namespace sio
             ss << _pack_id;
         }
 
-        payload_ptr.append(ss.str());
+        // Reserve final payload size before appending to minimize reallocations
+        string meta = ss.str();
+        size_t expected_extra = meta.size() + (hasMessage ? json_str.size() : 0);
+        payload_ptr.reserve(payload_ptr.size() + expected_extra + 1);
+        payload_ptr.append(meta);
 
         if (hasMessage)
         {
@@ -534,7 +588,9 @@ namespace sio
     void packet_manager::encode(packet &pack, encode_callback_function const &override_encode_callback) const
     {
         shared_ptr<string> ptr = make_shared<string>();
+        ptr->reserve(512); // heuristic reserve to reduce small-buffer churn
         vector<shared_ptr<const string>> buffers;
+        buffers.reserve(4);
         const encode_callback_function *cb_ptr = &m_encode_callback;
 
         if (override_encode_callback)
