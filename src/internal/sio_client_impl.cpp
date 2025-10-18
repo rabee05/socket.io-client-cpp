@@ -41,7 +41,7 @@ namespace sio
                                                               m_con_state(con_closed),
                                                               m_reconn_delay(5000),
                                                               m_reconn_delay_max(25000),
-                                                              m_reconn_attempts(0xFFFFFFFF),
+                                                              m_reconn_attempts(static_cast<unsigned>(-1)),
                                                               m_reconn_made(0)
     {
         using websocketpp::log::alevel;

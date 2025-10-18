@@ -28,9 +28,9 @@ namespace sio
 
     struct reconnect_config
     {
-        unsigned attempts = 0xFFFFFFFF; // Infinite by default (max unsigned int)
-        unsigned delay = 5000;          // 5 seconds
-        unsigned delay_max = 25000;     // 25 seconds
+        unsigned attempts = static_cast<unsigned>(-1); // Infinite by default
+        unsigned delay = 5000;                       // 5 seconds
+        unsigned delay_max = 25000;                  // 25 seconds
         bool enabled = true;
 
         reconnect_config() = default;
