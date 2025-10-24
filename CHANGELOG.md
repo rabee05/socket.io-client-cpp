@@ -1,3 +1,53 @@
+# [3.2.0](https://github.com/socketio/socket.io-client-cpp/compare/3.1.0...3.2.0) (2025-10-24)
+
+
+### Features
+
+* **coroutines**: Add C++20 coroutine support with emit_async for modern async/await programming
+* **disconnect**: Track detailed disconnect reasons including ping_timeout differentiation
+* **listeners**: Add on_with_ack for simplified acknowledgment handling
+* **listeners**: Add on_any for catch-all event listener
+* **state**: Add connection state monitoring with set_state_listener
+* **reconnect**: Add reconnect_config for flexible reconnection configuration
+* **metrics**: Add connection metrics tracking (packets sent/received, ping latency)
+
+
+### Performance
+
+* replace std::bind with lambdas for 2-5% faster event dispatch
+* optimize move semantics in message handling
+* modernize async I/O patterns with ASIO
+* improve atomic state management for lock-free operations
+
+
+### Bug Fixes
+
+* **memory**: Fix memory leaks in event listener management
+* **thread-safety**: Add thread-safe listener add/remove operations
+* **smart-pointers**: Improve smart pointer lifecycle management
+
+
+### Dependencies
+
+* upgrade ASIO from 1.10.2 to 1.18.2
+* upgrade RapidJSON from v1.0-beta to v1.1.0
+* update WebSocket++ to 0.8.2
+
+
+### Documentation
+
+* consolidate documentation into comprehensive README
+* add C++20 coroutine usage examples
+* add disconnect handling guide
+* add compression performance analysis
+
+
+### BREAKING CHANGES
+
+* None - fully backward compatible with 3.1.0
+
+
+
 # [2.1.0](https://github.com/socketio/socket.io-client-cpp/compare/2.0.0...2.1.0) (2021-10-12)
 
 
