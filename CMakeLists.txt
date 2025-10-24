@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.12...3.27)
 
 PROJECT(sioclient
-    VERSION 3.1.0
+    VERSION 3.2.0
 )
 
 # Export compile commands for IDEs (VSCode, CLion, etc.)
@@ -38,7 +38,7 @@ add_definitions(
     -DBOOST_REGEX_NO_LIB
     -DASIO_STANDALONE
 
-    # These will force sioclient to compile with C++11
+    # These will force sioclient to compile with C++20
     -D_WEBSOCKETPP_CPP11_STL_
     -D_WEBSOCKETPP_CPP11_FUNCTIONAL_
     -D_WEBSOCKETPP_CPP11_TYPE_TRAITS_
@@ -88,7 +88,7 @@ target_include_directories(sioclient PUBLIC
     ${MODULE_INCLUDE_DIRS}
 )
 
-target_compile_features(sioclient PUBLIC cxx_std_11)
+target_compile_features(sioclient PUBLIC cxx_std_20)
 
 find_package(Threads REQUIRED)
 target_link_libraries(sioclient PUBLIC Threads::Threads)
@@ -144,7 +144,7 @@ if(OPENSSL_FOUND)
         ${OPENSSL_INCLUDE_DIR}
     )
 
-    target_compile_features(sioclient_tls PUBLIC cxx_std_11)
+target_compile_features(sioclient_tls PUBLIC cxx_std_20)
     target_compile_definitions(sioclient_tls PRIVATE -DSIO_TLS)
 
     target_link_libraries(sioclient_tls PRIVATE OpenSSL::SSL OpenSSL::Crypto)
