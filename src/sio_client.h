@@ -51,10 +51,26 @@ namespace sio
     class client
     {
     public:
-        enum close_reason
+        enum class disconnect_reason
         {
-            close_reason_normal,
-            close_reason_drop
+            client_disconnect,      // User called close()
+            server_disconnect,      // Server sent disconnect packet
+            transport_close,        // WebSocket closed cleanly
+            transport_error,        // WebSocket error
+            ping_timeout,          // Server stopped responding to pings
+            namespace_disconnect,   // Namespace-specific disconnect
+            max_reconnect_attempts  // Reconnection attempts exhausted
+        };
+
+        enum class connection_error
+        {
+            timeout,                  // Connection timeout
+            network_failure,          // Network unreachable, DNS failure
+            protocol_error,           // Invalid socket.io protocol
+            authentication_failed,    // Auth rejected by server
+            transport_open_failed,   // WebSocket handshake failed
+            ssl_error,                // TLS/SSL error (Release builds)
+            unknown                   // Unknown error
         };
 
         enum class connection_state
@@ -68,7 +84,9 @@ namespace sio
 
         typedef std::function<void(void)> con_listener;
 
-        typedef std::function<void(close_reason const &reason)> close_listener;
+        typedef std::function<void(disconnect_reason reason)> close_listener;
+
+        typedef std::function<void(connection_error error)> fail_listener;
 
         typedef std::function<void(unsigned, unsigned)> reconnect_listener;
 
@@ -83,7 +101,7 @@ namespace sio
         // set listeners and event bindings.
         void set_open_listener(con_listener const &l);
 
-        void set_fail_listener(con_listener const &l);
+        void set_fail_listener(fail_listener const &l);
 
         void set_reconnecting_listener(con_listener const &l);
 
