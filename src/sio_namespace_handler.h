@@ -7,6 +7,7 @@
 #include <memory>
 #include <vector>
 #include <utility>
+#include <algorithm>
 
 namespace sio
 {
@@ -63,10 +64,8 @@ namespace sio
         {
             if (socket_) {
                 socket_->off(event_name);
-                registered_events_.erase(
-                    std::remove(registered_events_.begin(), registered_events_.end(), event_name),
-                    registered_events_.end()
-                );
+                auto it = std::remove(registered_events_.begin(), registered_events_.end(), event_name);
+                registered_events_.erase(it, registered_events_.end());
             }
         }
 
@@ -82,34 +81,46 @@ namespace sio
         }
 
         /**
-         * Emit an event
+         * Emit an event (fire-and-forget)
          */
         void emit(const std::string& event_name, const message::ptr& message)
         {
             if (socket_) {
-                socket_->emit(event_name, message);
+                socket_->emit(event_name, message::list(message));
+            }
+        }
+
+        /**
+         * Emit an event with message list (fire-and-forget)
+         */
+        void emit(const std::string& event_name, const message::list& messages = nullptr)
+        {
+            if (socket_) {
+                socket_->emit(event_name, messages);
             }
         }
 
         /**
          * Emit an event with acknowledgment callback
          */
-        void emit(const std::string& event_name,
-                 const message::ptr& message,
-                 std::function<void(const message::list&)> const& ack)
+        void emit_with_ack(const std::string& event_name,
+                          const message::ptr& message,
+                          std::function<void(const message::list&)> const& ack)
         {
             if (socket_) {
-                socket_->emit(event_name, message, ack);
+                socket_->emit_with_ack(event_name, message::list(message), ack);
             }
         }
 
         /**
-         * Emit an event with message list
+         * Emit an event with message list and acknowledgment callback
          */
-        void emit(const std::string& event_name, const message::list& messages)
+        void emit_with_ack(const std::string& event_name,
+                          const message::list& messages,
+                          std::function<void(const message::list&)> const& ack)
         {
             if (socket_) {
-                socket_->emit(event_name, messages);
+                socket_->emit_with_ack(event_name, messages, ack);
             }
         }
 
