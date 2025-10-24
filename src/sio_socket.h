@@ -1,11 +1,27 @@
 #ifndef SIO_SOCKET_H
 #define SIO_SOCKET_H
 #include "sio_message.h"
+#include "sio_awaitable.h"
 #include <functional>
 #include <memory>
+#include <chrono>
 namespace sio
 {
     class event_adapter;
+
+    struct connection_metrics
+    {
+        // Traffic counters
+        size_t packets_sent;
+        size_t packets_received;
+
+        // Connection health
+        size_t reconnection_count;
+        std::chrono::milliseconds last_ping_latency;
+
+        // Session info
+        std::chrono::system_clock::time_point connected_at;
+    };
 
     class event
     {
@@ -87,9 +103,27 @@ namespace sio
 
         void off_error();
 
-        void emit(std::string const &name, message::list const &msglist = nullptr, std::function<void(message::list const &)> const &ack = nullptr);
+        void emit(std::string const &event_name, message::list const &msglist = nullptr);
+
+        void emit_with_ack(std::string const &event_name, message::list const &msglist, std::function<void(message::list const &)> const &ack);
+
+        void emit_with_ack(std::string const &event_name,
+                          message::list const &msglist,
+                          std::function<void(message::list const &)> const &ack,
+                          unsigned timeout_ms,
+                          std::function<void()> const &timeout_callback);
+
+        // C++20 Coroutine support - async emit with co_await
+        emit_task emit_async(std::string const &event_name,
+                            message::list const &msglist = nullptr);
+
+        emit_task emit_async(std::string const &event_name,
+                            message::list const &msglist,
+                            unsigned timeout_ms);
 
         std::string const &get_namespace() const;
+
+        connection_metrics get_metrics() const;
 
     protected:
         socket(client_impl *, std::string const &, message::ptr const &);

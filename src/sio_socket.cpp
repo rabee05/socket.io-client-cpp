@@ -33,7 +33,7 @@ namespace sio
 
         static inline socket::event_listener do_adapt(socket::event_listener_aux const &func)
         {
-            return std::bind(&event_adapter::adapt_func, func, std::placeholders::_1);
+            return [func](event &ev) { adapt_func(func, ev); };
         }
 
         static inline event create_event(std::string const &nsp, std::string const &name, message::list &&message, bool need_ack)
@@ -137,9 +137,13 @@ namespace sio
 
         void close();
 
-        void emit(std::string const &name, message::list const &msglist, std::function<void(message::list const &)> const &ack);
+        void emit(std::string const &event_name, message::list const &msglist, std::function<void(message::list const &)> const &ack);
+
+        void emit(std::string const &event_name, message::list const &msglist, std::function<void(message::list const &)> const &ack, unsigned timeout_ms, std::function<void()> const &timeout_callback);
 
         std::string const &get_namespace() const { return m_nsp; }
+
+        connection_metrics get_metrics() const;
 
     protected:
         void on_connected();
@@ -180,6 +184,8 @@ namespace sio
 
         std::unordered_map<unsigned int, std::function<void(message::list const &)>> m_acks;
 
+        std::unordered_map<unsigned int, std::shared_ptr<asio::steady_timer>> m_ack_timers;
+
         std::unordered_map<std::string, event_listener> m_event_binding;
 
         event_listener m_event_listener;
@@ -193,6 +199,12 @@ namespace sio
         std::mutex m_event_mutex;
 
         std::mutex m_packet_mutex;
+
+        // Metrics tracking
+        std::atomic<size_t> m_packets_sent{0};
+        std::atomic<size_t> m_packets_received{0};
+        std::chrono::system_clock::time_point m_connected_at;
+        std::mutex m_metrics_mutex;
 
         friend class socket;
     };
@@ -266,16 +278,75 @@ namespace sio
 
     std::atomic<unsigned int> socket::impl::s_global_event_id{1};
 
-    void socket::impl::emit(std::string const &name, message::list const &msglist, std::function<void(message::list const &)> const &ack)
+    void socket::impl::emit(std::string const &event_name, message::list const &msglist, std::function<void(message::list const &)> const &ack)
     {
         NULL_GUARD(m_client);
-        message::ptr msg_ptr = msglist.to_array_message(name);
+        message::ptr msg_ptr = msglist.to_array_message(event_name);
         int pack_id;
         if (ack)
         {
             pack_id = s_global_event_id.fetch_add(1, std::memory_order_relaxed);
             std::lock_guard<std::mutex> guard(m_event_mutex);
             m_acks[pack_id] = ack;
+        }
+        else
+        {
+            pack_id = -1;
+        }
+        packet p(m_nsp, msg_ptr, pack_id);
+        send_packet(p);
+    }
+
+    void socket::impl::emit(std::string const &event_name,
+                            message::list const &msglist,
+                            std::function<void(message::list const &)> const &ack,
+                            unsigned timeout_ms,
+                            std::function<void()> const &timeout_callback)
+    {
+        NULL_GUARD(m_client);
+        message::ptr msg_ptr = msglist.to_array_message(event_name);
+        int pack_id;
+        if (ack)
+        {
+            pack_id = s_global_event_id.fetch_add(1, std::memory_order_relaxed);
+
+            // Create timeout timer
+            auto timer = std::make_shared<asio::steady_timer>(m_client->get_io_service());
+            timer->expires_after(std::chrono::milliseconds(timeout_ms));
+
+            // Capture pack_id for the timeout handler
+            timer->async_wait([this, pack_id, timeout_callback](const asio::error_code &ec)
+                              {
+                if (!ec) // Timer expired (not cancelled)
+                {
+                    std::function<void(message::list const &)> removed_ack;
+                    {
+                        std::lock_guard<std::mutex> guard(m_event_mutex);
+                        auto ack_it = m_acks.find(pack_id);
+                        if (ack_it != m_acks.end())
+                        {
+                            removed_ack = ack_it->second;
+                            m_acks.erase(ack_it);
+                        }
+                        auto timer_it = m_ack_timers.find(pack_id);
+                        if (timer_it != m_ack_timers.end())
+                        {
+                            m_ack_timers.erase(timer_it);
+                        }
+                    }
+
+                    // Call timeout callback if ack was still pending
+                    if (removed_ack && timeout_callback)
+                    {
+                        timeout_callback();
+                    }
+                } });
+
+            {
+                std::lock_guard<std::mutex> guard(m_event_mutex);
+                m_acks[pack_id] = ack;
+                m_ack_timers[pack_id] = timer;
+            }
         }
         else
         {
@@ -292,7 +363,7 @@ namespace sio
         m_client->send(p);
         m_connection_timer.reset(new asio::steady_timer(m_client->get_io_service()));
         m_connection_timer->expires_after(std::chrono::milliseconds(20000));
-        m_connection_timer->async_wait(std::bind(&socket::impl::timeout_connection, this, std::placeholders::_1));
+        m_connection_timer->async_wait([this](auto const& ec) { timeout_connection(ec); });
     }
 
     void socket::impl::close()
@@ -308,7 +379,7 @@ namespace sio
                 m_connection_timer.reset(new asio::steady_timer(m_client->get_io_service()));
             }
             m_connection_timer->expires_after(std::chrono::milliseconds(3000));
-            m_connection_timer->async_wait(std::bind(&socket::impl::on_close, this));
+            m_connection_timer->async_wait([this](auto const&) { on_close(); });
         }
     }
 
@@ -322,6 +393,7 @@ namespace sio
         if (!m_connected)
         {
             m_connected = true;
+            m_connected_at = std::chrono::system_clock::now();
             m_client->on_socket_opened(m_nsp);
 
             // Extract all queued packets under lock, then send without holding lock
@@ -396,6 +468,7 @@ namespace sio
         NULL_GUARD(m_client);
         if (p.get_nsp() == m_nsp)
         {
+            m_packets_received.fetch_add(1, std::memory_order_relaxed);
             switch (p.get_type())
             {
             // Connect open
@@ -495,6 +568,7 @@ namespace sio
     void socket::impl::on_socketio_ack(int msgId, message::list const &message)
     {
         std::function<void(message::list const &)> l;
+        std::shared_ptr<asio::steady_timer> timer;
         {
             std::lock_guard<std::mutex> guard(m_event_mutex);
             auto it = m_acks.find(msgId);
@@ -503,6 +577,18 @@ namespace sio
                 l = it->second;
                 m_acks.erase(it);
             }
+            // Cancel and remove timeout timer if exists
+            auto timer_it = m_ack_timers.find(msgId);
+            if (timer_it != m_ack_timers.end())
+            {
+                timer = timer_it->second;
+                m_ack_timers.erase(timer_it);
+            }
+        }
+        // Cancel timer outside of lock
+        if (timer)
+        {
+            timer->cancel();
         }
         if (l)
             l(message);
@@ -546,9 +632,11 @@ namespace sio
             for (auto &packet : packets_to_send)
             {
                 m_client->send(packet);
+                m_packets_sent.fetch_add(1, std::memory_order_relaxed);
             }
             // Send the new packet
             m_client->send(p);
+            m_packets_sent.fetch_add(1, std::memory_order_relaxed);
         }
         else
         {
@@ -566,6 +654,29 @@ namespace sio
             return it->second;
         }
         return socket::event_listener();
+    }
+
+    connection_metrics socket::impl::get_metrics() const
+    {
+        connection_metrics metrics;
+        metrics.packets_sent = m_packets_sent.load(std::memory_order_relaxed);
+        metrics.packets_received = m_packets_received.load(std::memory_order_relaxed);
+        metrics.connected_at = m_connected_at;
+
+        // Get client-level metrics
+        if (m_client)
+        {
+            metrics.reconnection_count = m_client->m_reconn_made;
+            auto latency_ms = m_client->m_last_ping_latency_ms.load(std::memory_order_relaxed);
+            metrics.last_ping_latency = std::chrono::milliseconds(latency_ms);
+        }
+        else
+        {
+            metrics.reconnection_count = 0;
+            metrics.last_ping_latency = std::chrono::milliseconds(0);
+        }
+
+        return metrics;
     }
 
     void socket::impl_deleter::operator()(impl *p) const
@@ -663,14 +774,81 @@ namespace sio
         m_impl->off_error();
     }
 
-    void socket::emit(std::string const &name, message::list const &msglist, std::function<void(message::list const &)> const &ack)
+    void socket::emit(std::string const &event_name, message::list const &msglist)
     {
-        m_impl->emit(name, msglist, ack);
+        m_impl->emit(event_name, msglist, nullptr);
+    }
+
+    void socket::emit_with_ack(std::string const &event_name, message::list const &msglist, std::function<void(message::list const &)> const &ack)
+    {
+        m_impl->emit(event_name, msglist, ack);
+    }
+
+    void socket::emit_with_ack(std::string const &event_name,
+                               message::list const &msglist,
+                               std::function<void(message::list const &)> const &ack,
+                               unsigned timeout_ms,
+                               std::function<void()> const &timeout_callback)
+    {
+        m_impl->emit(event_name, msglist, ack, timeout_ms, timeout_callback);
+    }
+
+    // C++20 Coroutine support - emit_async without timeout
+    emit_task socket::emit_async(std::string const &event_name,
+                                 message::list const &msglist)
+    {
+        // Create awaiter object that will be suspended and resumed
+        auto awaiter = std::make_shared<emit_awaiter>();
+
+        // Create the callback that will resume the coroutine
+        auto ack_callback = [awaiter](message::list const &response)
+        {
+            awaiter->set_result(response);
+        };
+
+        // Start the async operation
+        m_impl->emit(event_name, msglist, ack_callback);
+
+        // Suspend until the callback resumes us and return the result
+        co_return co_await *awaiter;
+    }
+
+    // C++20 Coroutine support - emit_async with timeout
+    emit_task socket::emit_async(std::string const &event_name,
+                                 message::list const &msglist,
+                                 unsigned timeout_ms)
+    {
+        // Create awaiter object that will be suspended and resumed
+        auto awaiter = std::make_shared<emit_awaiter>();
+
+        // Create the ack callback that will resume with result
+        auto ack_callback = [awaiter](message::list const &response)
+        {
+            awaiter->set_result(response);
+        };
+
+        // Create the timeout callback that will resume with exception
+        auto timeout_callback = [awaiter]()
+        {
+            auto ex = std::make_exception_ptr(timeout_exception());
+            awaiter->set_exception(ex);
+        };
+
+        // Start the async operation with timeout
+        m_impl->emit(event_name, msglist, ack_callback, timeout_ms, timeout_callback);
+
+        // Suspend until one of the callbacks resumes us and return the result
+        co_return co_await *awaiter;
     }
 
     std::string const &socket::get_namespace() const
     {
         return m_impl->get_namespace();
+    }
+
+    connection_metrics socket::get_metrics() const
+    {
+        return m_impl->get_metrics();
     }
 
     void socket::on_connected()
