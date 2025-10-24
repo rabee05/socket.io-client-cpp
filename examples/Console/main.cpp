@@ -52,13 +52,13 @@ public:
         connect_finish = true;
         _lock.unlock();
     }
-    void on_close(client::close_reason const& reason)
+    void on_close(client::disconnect_reason reason)
     {
         std::cout<<"sio closed "<<std::endl;
         exit(0);
     }
-    
-    void on_fail()
+
+    void on_fail(client::connection_error error)
     {
         std::cout<<"sio failed "<<std::endl;
         exit(0);
@@ -109,8 +109,8 @@ MAIN_FUNC
     connection_listener l(h);
     
     h.set_open_listener(std::bind(&connection_listener::on_connected, &l));
-    h.set_close_listener(std::bind(&connection_listener::on_close, &l,std::placeholders::_1));
-    h.set_fail_listener(std::bind(&connection_listener::on_fail, &l));
+    h.set_close_listener(std::bind(&connection_listener::on_close, &l, std::placeholders::_1));
+    h.set_fail_listener(std::bind(&connection_listener::on_fail, &l, std::placeholders::_1));
     h.connect("http://127.0.0.1:3000");
     _lock.lock();
     if(!connect_finish)

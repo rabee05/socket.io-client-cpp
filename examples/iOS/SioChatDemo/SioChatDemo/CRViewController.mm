@@ -154,7 +154,7 @@ void OnFailed(CFTypeRef ctrl)
     });
 }
 
-void OnClose(CFTypeRef ctrl,sio::client::close_reason const& reason)
+void OnClose(CFTypeRef ctrl,sio::client::disconnect_reason reason)
 {
     dispatch_async(dispatch_get_main_queue(), ^{
         [((__bridge CRViewController*)ctrl) onDisconnected];

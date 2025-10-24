@@ -38,7 +38,7 @@ MainWindow::MainWindow(QWidget *parent) :
     BIND_EVENT(sock,"login",std::bind(&MainWindow::OnLogin,this,_1,_2,_3,_4));
     _io->set_socket_open_listener(std::bind(&MainWindow::OnConnected,this,std::placeholders::_1));
     _io->set_close_listener(std::bind(&MainWindow::OnClosed,this,_1));
-    _io->set_fail_listener(std::bind(&MainWindow::OnFailed,this));
+    _io->set_fail_listener(std::bind(&MainWindow::OnFailed,this,_1));
 
     connect(this,SIGNAL(RequestAddListItem(QListWidgetItem*)),this,SLOT(AddListItem(QListWidgetItem*)));
     connect(this,SIGNAL(RequestRemoveListItem(QListWidgetItem*)),this,SLOT(RemoveListItem(QListWidgetItem*)));
@@ -263,12 +263,12 @@ void MainWindow::OnConnected(std::string const& nsp)
     _io->socket()->emit("add user", nickName);
 }
 
-void MainWindow::OnClosed(client::close_reason const& reason)
+void MainWindow::OnClosed(client::disconnect_reason reason)
 {
     Q_EMIT RequestToggleInputs(false);
 }
 
-void MainWindow::OnFailed()
+void MainWindow::OnFailed(client::connection_error error)
 {
     Q_EMIT RequestToggleInputs(false);
 }

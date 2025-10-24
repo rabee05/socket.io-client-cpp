@@ -48,8 +48,8 @@ private:
     void OnStopTyping(std::string const& name,message::ptr const& data,bool hasAck,message::list &ack_resp);
     void OnLogin(std::string const& name,message::ptr const& data,bool hasAck,message::list &ack_resp);
     void OnConnected(std::string const& nsp);
-    void OnClosed(client::close_reason const& reason);
-    void OnFailed();
+    void OnClosed(client::disconnect_reason reason);
+    void OnFailed(client::connection_error error);
     void ShowLoginDialog();
 
     Ui::MainWindow *ui;
