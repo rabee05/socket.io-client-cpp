@@ -25,11 +25,11 @@ Fire-and-forget event emission. Sends an event without expecting an acknowledgme
 
 `void emit_with_ack(std::string const& name, message::list const& msglist, std::function<void(message::list const&)> const& ack)`
 
-**New in v3.1.0**: Emit an event and receive an acknowledgment callback from the server. Use this when you need to know the server has processed your event and potentially receive response data.
+**New in v3.2.0**: Emit an event and receive an acknowledgment callback from the server. Use this when you need to know the server has processed your event and potentially receive response data.
 
 `void emit_with_ack(std::string const& name, message::list const& msglist, std::function<void(message::list const&)> const& ack, unsigned timeout_ms, std::function<void()> const& timeout_callback)`
 
-**New in v3.1.0**: Emit with acknowledgment and timeout support. If the server doesn't respond within the specified timeout, the timeout callback is invoked and the ack callback is cancelled.
+**New in v3.2.0**: Emit with acknowledgment and timeout support. If the server doesn't respond within the specified timeout, the timeout callback is invoked and the ack callback is cancelled.
 
 `emit_task emit_async(std::string const& name, message::list const& msglist = nullptr)`
 
@@ -93,13 +93,13 @@ Bind a callback to specified event name. Same as `socket.on()` function in JS, `
 
 `void on_with_ack(std::string const& event_name, event_handler_with_ack const& handler)`
 
-**New in v3.1.0**: Simplified event handler that provides direct access to acknowledgment message. No need to check `need_ack()` manually.
+**New in v3.2.0**: Simplified event handler that provides direct access to acknowledgment message. No need to check `need_ack()` manually.
 
 `void on_any(event_listener const& func)`
 
 `void on_any(event_listener_aux const& func)`
 
-**New in v3.1.0**: Bind a "catch-all" listener that receives all events on this socket. Useful for debugging or logging.
+**New in v3.2.0**: Bind a "catch-all" listener that receives all events on this socket. Useful for debugging or logging.
 
 `void off(std::string const& event_name)`
 
@@ -165,7 +165,7 @@ Get current namespace name which the client is inside.
 #### Get connection metrics
 `connection_metrics get_metrics() const`
 
-**New in v3.1.0**: Retrieves connection statistics and health metrics for this socket.
+**New in v3.2.0**: Retrieves connection statistics and health metrics for this socket.
 
 Returns a `connection_metrics` struct containing:
 - `packets_sent`: Number of packets sent through this socket
@@ -199,19 +199,19 @@ Call when websocket is open, especially means good connectivity.
 
 `void set_fail_listener(fail_listener const& l)`
 
-**New in v3.1.0**: Called when connection fails with detailed error reason.
+**New in v3.2.0**: Called when connection fails with detailed error reason.
 
 `void set_close_listener(close_listener const& l)`
 
-**New in v3.1.0**: Called when connection closes with detailed disconnect reason.
+**New in v3.2.0**: Called when connection closes with detailed disconnect reason.
 
 `void set_state_listener(state_listener const& l)`
 
-**New in v3.1.0**: Monitor all connection state changes (disconnected, connecting, connected, reconnecting, closing).
+**New in v3.2.0**: Monitor all connection state changes (disconnected, connecting, connected, reconnecting, closing).
 
 `void clear_con_listeners()`
 
-**New in v3.1.0**: Clear all connection-related listeners (open, fail, close, reconnect, reconnecting).
+**New in v3.2.0**: Clear all connection-related listeners (open, fail, close, reconnect, reconnecting).
 
 ```C++
 //connection listener enums and typedefs:
@@ -268,7 +268,7 @@ Set listener for socket close event, called when any sockets being closed, after
 
 `void clear_socket_listeners()`
 
-**New in v3.1.0**: Clear both socket open and close listeners.
+**New in v3.2.0**: Clear both socket open and close listeners.
 
 ```C++
     //socket_listener declare:
@@ -303,7 +303,7 @@ Check if client's connection is opened.
 
 `connection_state get_connection_state() const`
 
-**New in v3.1.0**: Get current connection state (disconnected, connecting, connected, reconnecting, closing).
+**New in v3.2.0**: Get current connection state (disconnected, connecting, connected, reconnecting, closing).
 
 #### Transparent reconnecting
 `void set_reconnect_attempts(int attempts)`
@@ -321,7 +321,7 @@ Set maximum delay for reconnecting.
 
 `void set_reconnect_config(const reconnect_config& config)`
 
-**New in v3.1.0**: Configure all reconnection parameters at once using a `reconnect_config` struct.
+**New in v3.2.0**: Configure all reconnection parameters at once using a `reconnect_config` struct.
 
 ```C++
 // reconnect_config struct:
@@ -392,11 +392,11 @@ All designated constructor of `message` objects is hidden, you need to create me
 
 ---
 
-## New API Features (v3.1.0)
+## New API Features (v3.2.0)
 
 ### Type-Safe Error Handling
 
-**New in v3.1.0**: The library now provides detailed, type-safe error enums instead of generic callbacks.
+**New in v3.2.0**: The library now provides detailed, type-safe error enums instead of generic callbacks.
 
 #### Disconnect Reasons
 
@@ -718,8 +718,8 @@ socket->emit("message", "Hello");
 
 The library now uses modern, stable versions:
 
-- **ASIO**: 1.18.2 (previously 1.10.2)
-- **RapidJSON**: 1.1.0 (previously v1.0-beta)
+- **ASIO**: 1.36.0 (previously 1.10.2)
+- **SimdJSON**: 3.10.1 (replaced RapidJSON for 2-3x faster JSON parsing)
 - **WebSocketPP**: 0.8.2 (previously 0.7.0)
 - **OpenSSL**: System version (Release builds only)
 
@@ -727,7 +727,7 @@ All dependencies are managed via git submodules for reproducible builds.
 
 ---
 
-## Namespace Handler Helper (v3.1.0)
+## Namespace Handler Helper (v3.2.0)
 
 For convenience when working with a specific namespace, you can use the `namespace_handler` helper class:
 
