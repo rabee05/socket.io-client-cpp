@@ -75,8 +75,8 @@ namespace sio
         }
         
         SYNTHESIS_SETTER(client::con_listener,open_listener)
-        
-        SYNTHESIS_SETTER(client::con_listener,fail_listener)
+
+        SYNTHESIS_SETTER(client::fail_listener,fail_listener)
 
         SYNTHESIS_SETTER(client::reconnect_listener,reconnect_listener)
 
@@ -222,6 +222,8 @@ namespace sio
 
         unsigned int m_ping_interval;
         unsigned int m_ping_timeout;
+        std::chrono::steady_clock::time_point m_last_ping_sent;
+        std::atomic<std::chrono::milliseconds::rep> m_last_ping_latency_ms{0};
         
         std::unique_ptr<std::thread> m_network_thread;
         
@@ -234,7 +236,7 @@ namespace sio
         std::atomic<con_state> m_con_state;
         
         client::con_listener m_open_listener;
-        client::con_listener m_fail_listener;
+        client::fail_listener m_fail_listener;
         client::con_listener m_reconnecting_listener;
         client::reconnect_listener m_reconnect_listener;
         client::close_listener m_close_listener;
@@ -257,6 +259,10 @@ namespace sio
         unsigned m_reconn_made;
 
         std::atomic<bool> m_abort_retries { false };
+
+        // Track the reason for the next disconnect (if set explicitly)
+        std::atomic<client::disconnect_reason> m_pending_disconnect_reason { client::disconnect_reason::transport_close };
+        std::atomic<bool> m_has_pending_reason { false };
 
         friend class sio::client;
         friend class sio::socket;
