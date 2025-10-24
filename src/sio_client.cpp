@@ -32,7 +32,7 @@ namespace sio
         m_impl->set_open_listener(l);
     }
     
-    void client::set_fail_listener(con_listener const& l)
+    void client::set_fail_listener(fail_listener const& l)
     {
         m_impl->set_fail_listener(l);
     }
