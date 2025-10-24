@@ -29,8 +29,8 @@
 
 ### Dependencies
 
-* upgrade ASIO from 1.10.2 to 1.18.2
-* upgrade RapidJSON from v1.0-beta to v1.1.0
+* upgrade ASIO from 1.10.2 to 1.36.0
+* replace RapidJSON with SimdJSON 3.10.1 (faster JSON parsing)
 * update WebSocket++ to 0.8.2
 
 

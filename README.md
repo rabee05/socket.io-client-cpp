@@ -99,27 +99,32 @@ int main() {
 ### Dependencies
 
 Managed via git submodules:
-- ASIO 1.18.2
-- RapidJSON 1.1.0
+
+- ASIO 1.36.0
+- SimdJSON 3.10.1
 - WebSocket++ 0.8.2
 - OpenSSL (system, Release builds only)
 
 ### Build Options
 
 #### Development (HTTP only)
+
 ```bash
 cmake -DCMAKE_BUILD_TYPE=Debug ..
 make
 ```
+
 - Protocol: `ws://` (WebSocket)
 - Size: ~24MB (with debug symbols)
 - Use for: Local development
 
 #### Production (HTTPS only)
+
 ```bash
 cmake -DCMAKE_BUILD_TYPE=Release ..
 make
 ```
+
 - Protocol: `wss://` (WebSocket Secure)
 - Size: ~2.7MB (optimized)
 - Use for: Production deployments
@@ -262,6 +267,7 @@ sio::emit_task with_timeout(sio::socket::ptr socket) {
 ### Before vs. After
 
 **Before (Callback Hell):**
+
 ```cpp
 socket->emit_with_ack("step1", data1, [socket](auto& r1) {
     socket->emit_with_ack("step2", r1, [socket](auto& r2) {
@@ -273,6 +279,7 @@ socket->emit_with_ack("step1", data1, [socket](auto& r1) {
 ```
 
 **After (Clean Coroutines):**
+
 ```cpp
 sio::emit_task workflow(sio::socket::ptr socket) {
     auto r1 = co_await socket->emit_async("step1", data1);
@@ -476,12 +483,14 @@ client.set_logs_default();
 ## What's New in v3.2.0
 
 ### Performance
+
 - ✅ Replaced `std::bind` with lambdas (2-5% faster event dispatch)
 - ✅ Optimized string handling with move semantics
 - ✅ Improved async I/O with modern ASIO patterns
 - ✅ Atomic state management for lock-free operations
 
 ### Features
+
 - ✅ C++20 coroutine support with `emit_async()`
 - ✅ Detailed disconnect reason tracking
 - ✅ Auto-acknowledgment with `on_with_ack()`
@@ -491,6 +500,7 @@ client.set_logs_default();
 - ✅ Connection metrics and monitoring
 
 ### Reliability
+
 - ✅ Fixed memory leaks in event listeners
 - ✅ Thread-safe listener operations
 - ✅ Smart pointer management (no manual delete)
@@ -498,8 +508,9 @@ client.set_logs_default();
 - ✅ Zero compilation warnings
 
 ### Dependencies
-- ✅ ASIO: 1.10.2 → 1.18.2
-- ✅ RapidJSON: v1.0-beta → v1.1.0
+
+- ✅ ASIO: 1.10.2 → 1.36.0
+- ✅ JSON Parser: RapidJSON → SimdJSON 3.10.1 (much faster)
 - ✅ WebSocket++: Updated to 0.8.2
 
 ## Documentation
@@ -521,4 +532,3 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 - GitHub Issues: [Report bugs or request features](https://github.com/socketio/socket.io-client-cpp/issues)
 - Stack Overflow: Tag with `socket.io` and `c++`
-- Socket.IO Slack: [Join the community](https://socketio.slack.com)
