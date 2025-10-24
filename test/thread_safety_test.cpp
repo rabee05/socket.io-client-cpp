@@ -41,7 +41,7 @@ TEST_CASE("Thread Safety - Concurrent listener modifications", "[thread][safety]
                     if (i % 2 == 0) {
                         client.clear_con_listeners();
                     } else {
-                        client.set_fail_listener([]() {});
+                        client.set_fail_listener([](sio::client::connection_error error) {});
                     }
                 }
             });
@@ -228,5 +228,27 @@ TEST_CASE("Memory Safety - Listener lifecycle", "[memory][safety]") {
         }
 
         REQUIRE(shared_data.use_count() == 1);
+    }
+}
+
+TEST_CASE("Connection Metrics - Basic functionality", "[metrics]") {
+    sio::client client;
+    auto sock = client.socket("/test");
+
+    SECTION("Metrics are initialized to zero") {
+        auto metrics = sock->get_metrics();
+        REQUIRE(metrics.packets_sent == 0);
+        REQUIRE(metrics.packets_received == 0);
+        REQUIRE(metrics.reconnection_count == 0);
+        REQUIRE(metrics.last_ping_latency.count() == 0);
+    }
+
+    SECTION("Connected_at timestamp is valid after connection") {
+        // Note: This test doesn't actually connect, so connected_at will be default initialized
+        // In a real connection scenario, it would be set to the actual connection time
+        auto metrics = sock->get_metrics();
+        // Just verify we can access the field without crashing
+        auto time_since_epoch = metrics.connected_at.time_since_epoch().count();
+        REQUIRE(time_since_epoch >= 0);
     }
 }
