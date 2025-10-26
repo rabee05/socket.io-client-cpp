@@ -226,8 +226,16 @@ namespace sio
     class binary_message : public message
     {
         std::shared_ptr<const std::string> _v;
+        std::shared_ptr<const std::vector<uint8_t>> _vec;
+        mutable std::shared_ptr<const std::string> _cached_str;
+
         binary_message(std::shared_ptr<const std::string> const &v)
             : message(flag_binary), _v(v)
+        {
+        }
+
+        binary_message(std::shared_ptr<const std::vector<uint8_t>> const &vec)
+            : message(flag_binary), _vec(vec)
         {
         }
 
@@ -237,9 +245,31 @@ namespace sio
             return ptr(new binary_message(v));
         }
 
+        // Zero-copy creation from vector<uint8_t> shared_ptr
+        static message::ptr create(std::shared_ptr<const std::vector<uint8_t>> const &v)
+        {
+            return ptr(new binary_message(v));
+        }
+
+        // Convenience: move vector into shared_ptr (single allocation, no copy)
+        static message::ptr create(std::vector<uint8_t> &&v)
+        {
+            return ptr(new binary_message(
+                std::make_shared<const std::vector<uint8_t>>(std::move(v))
+            ));
+        }
+
         std::shared_ptr<const std::string> const &get_binary() const override
         {
-            return _v;
+            // Lazy conversion: only convert vector to string when needed
+            if (_vec && !_cached_str)
+            {
+                _cached_str = std::make_shared<const std::string>(
+                    reinterpret_cast<const char*>(_vec->data()),
+                    _vec->size()
+                );
+            }
+            return _vec ? _cached_str : _v;
         }
     };
 
